@@ -140,15 +140,22 @@ function stopEngines() {
 }
 
 /** Asks the server for the first bytes: resolves + caches the stream, and tells us if it's usable. */
+let probeFailures = 0
 async function serverStreamOk(id: string): Promise<boolean> {
   if (Date.now() < serverDownUntil) return false
   try {
-    const r = await fetch(`/api/stream/${id}`, { headers: { range: 'bytes=0-1' }, cache: 'no-store' })
+    // Don't make the listener wait long for a server that's struggling: the fallback is instant.
+    const r = await fetch(`/api/stream/${id}`, { headers: { range: 'bytes=0-1' }, cache: 'no-store', signal: AbortSignal.timeout(8000) })
     await r.body?.cancel()
-    if (r.status === 503) serverDownUntil = Date.now() + SERVER_DOWN_MS
-    return r.ok
+    if (r.ok) { probeFailures = 0; return true }
+    // 503 = YouTube bot-checked the server. Two failures in a row means the same, in practice.
+    if (r.status === 503 || ++probeFailures >= 2) serverDownUntil = Date.now() + SERVER_DOWN_MS
+    return false
   }
-  catch { return false }
+  catch {
+    if (++probeFailures >= 2) serverDownUntil = Date.now() + SERVER_DOWN_MS
+    return false
+  }
 }
 
 // ------------------------------------------------------------------ loading

@@ -18,7 +18,9 @@ Platform.shim.eval = (data: { output: string }, env: Record<string, unknown>) =>
 type Client = Types.InnerTubeClient
 
 /**
- * Clients that return audio without PO tokens (verified live in CI). When this server's IP
+ * Clients that return audio without PO tokens (verified live in CI).
+ * Tested 2026-11: BotGuard PO tokens (bgutils-js) do NOT get a flagged datacenter IP past
+ * "confirm you're not a bot" for any client, so we don't generate them. When this server's IP
  * gets YouTube's "confirm you're not a bot" check, all of them fail together, so we stop early
  * and let the browser fall back to the embedded player (see app/composables/usePlayer.ts).
  */
