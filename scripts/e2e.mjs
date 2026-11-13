@@ -163,12 +163,13 @@ const browser = await chromium.launch({
 
   // One-click Google sign-in: the button goes straight to Google's account chooser
   let googleUrl = null
-  await page.route('https://accounts.google.com/**', (route) => { googleUrl = route.request().url(); route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>Google</h1>' }) })
+  const onReq = (r) => { if (!googleUrl && r.url().startsWith('https://accounts.google.com/o/oauth2/v2/auth')) googleUrl = r.url() }
+  page.on('request', onReq)
   const gBtn = page.getByRole('button', { name: /Continue with Google/ }).first()
   await gBtn.waitFor({ timeout: 10_000 }).catch(() => {})
   await gBtn.click().catch(() => {})
   await page.waitForURL(/accounts\.google\.com/, { timeout: 10_000 }).catch(() => {})
-  googleUrl ??= /accounts\.google\.com/.test(page.url()) ? page.url() : null
+  page.off('request', onReq)
   ok('Continue with Google opens Google sign-in in one tap', !!googleUrl && /scope=[^&]*youtube\.readonly/.test(googleUrl), (googleUrl ?? '').slice(0, 90))
   // …and coming back signed in (simulated callback with this browser's own state)
   await page.goto(BASE + '/library', { waitUntil: 'domcontentloaded' })
@@ -189,7 +190,6 @@ const browser = await chromium.launch({
   await page.goto(`${BASE}/library?r=2#sonora-auth=${forged}`, { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(1500)
   ok('forged sign-in is refused', !(await page.locator('text=Mallory >> visible=true').count()) && !(await page.evaluate(() => localStorage.getItem('sonora-account'))))
-  await page.unroute('https://accounts.google.com/**')
 
   // Other ways: the Google device code appears
   await page.goto(BASE + '/library', { waitUntil: 'domcontentloaded' })

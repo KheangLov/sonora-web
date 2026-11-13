@@ -5,7 +5,11 @@ export default defineNuxtPlugin(() => {
   // Finishes a Google sign-in redirect, refreshes tokens, sets the API cookies.
   const account = useAccount()
   // Back from Google: finish once the router has settled, so it can't restore the #sonora-auth hash.
-  useRouter().isReady().then(() => account.finishGoogleRedirect())
+  const router = useRouter()
+  let finished = false
+  const finish = () => { if (!finished) { finished = true; account.finishGoogleRedirect(router) } }
+  useNuxtApp().hooks.hookOnce('page:finish', () => { setTimeout(finish, 0) })
+  setTimeout(finish, 2500)
   player.start()
   // Read-only handle for the end-to-end test (scripts/e2e.mjs) and for debugging in DevTools.
   ;(window as any).__sonora = player

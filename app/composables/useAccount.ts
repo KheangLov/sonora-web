@@ -40,7 +40,7 @@ function load() {
   try { account.value = JSON.parse(localStorage.getItem(KEY) ?? 'null') } catch { account.value = null }
   applyCookies()
   startTimer()
-  window.addEventListener('hashchange', finishGoogleRedirect)
+  window.addEventListener('hashchange', () => finishGoogleRedirect())
   $fetch<{ google: boolean }>('/api/auth/config').then((c) => { googleEnabled.value = c.google }).catch(() => {})
   window.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') ensureFresh() })
   window.addEventListener('storage', (e) => {
@@ -159,18 +159,23 @@ function startGoogleSignIn() {
 }
 
 /** Back from Google: the tokens are in the URL fragment (never sent to any server). */
-function finishGoogleRedirect() {
+function finishGoogleRedirect(router?: ReturnType<typeof useRouter>) {
   const m = /[#&]sonora-auth=([\w-]+)/.exec(location.hash)
   if (!m) return
-  // Take the tokens out of the address bar (and history) right away. The router would put the
-  // initial hash back, so clear it through the router too.
-  history.replaceState(history.state, '', location.pathname + location.search)
-  try {
-    const router = useRouter()
-    const r = router.currentRoute.value
-    if (r.hash) router.replace({ path: r.path, query: r.query, hash: '' })
+  // Take the tokens out of the address bar and history right away. The router remembers the URL it
+  // started with and would write the hash back, so clear it through the router when we have it.
+  if (router) {
+    const clear = (tries: number) => {
+      const r = router.currentRoute.value
+      if (!r.hash.includes('sonora-auth')) return
+      // Fails while another navigation is still running: try again shortly.
+      router.replace({ path: r.path, query: r.query, hash: '' })
+        .then(fail => { if (fail && tries > 0) setTimeout(() => clear(tries - 1), 150) })
+        .catch(() => { if (tries > 0) setTimeout(() => clear(tries - 1), 150) })
+    }
+    clear(10)
   }
-  catch {}
+  else history.replaceState(history.state, '', location.pathname + location.search)
   let data: Record<string, any> = {}
   try { data = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(m[1]!.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)))) } catch { return }
   const expected = localStorage.getItem(STATE_KEY)
