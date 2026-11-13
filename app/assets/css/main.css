@@ -24,6 +24,7 @@
   --sidebar-w: 0px;
   --bottom-nav-h: 0px;
   --player-h: 0px;
+  --banner-h: 0px;
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-t: env(safe-area-inset-top, 0px);
 
@@ -68,7 +69,7 @@ input { font: inherit; color: inherit; }
 .grow { flex: 1; min-width: 0; }
 .gap-8 { gap: 8px; }
 .gap-12 { gap: 12px; }
-.page { padding-bottom: calc(var(--bottom-nav-h) + var(--player-h) + var(--safe-b) + 24px); min-height: 100dvh; }
+.page { padding-bottom: calc(var(--bottom-nav-h) + var(--player-h) + var(--banner-h) + var(--safe-b) + 24px); min-height: 100dvh; }
 .pad { padding-left: 16px; padding-right: 16px; }
 @media (min-width: 900px) { .pad { padding-left: 32px; padding-right: 32px; } }
 

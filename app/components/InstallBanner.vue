@@ -5,6 +5,7 @@
  */
 const pwa = usePwaInstall()
 const player = usePlayer()
+const route = useRoute()
 const KEY = 'sonora-install-dismissed'
 const dismissedAt = ref(0)
 const visits = ref(0)
@@ -16,9 +17,17 @@ onMounted(() => {
 
 const show = computed(() =>
   pwa.canInstall.value
+  // Library has its own Install card.
+  && route.path !== '/library'
   && Date.now() - dismissedAt.value > 14 * 86400_000
   && (visits.value >= 2 || !!player.current.value),
 )
+
+// Phones: make room above the mini player so the banner never covers the page.
+watch(show, (s) => {
+  if (window.matchMedia('(min-width: 900px)').matches) return
+  document.documentElement.style.setProperty('--banner-h', s ? '72px' : '0px')
+}, { immediate: true })
 
 function dismiss() {
   dismissedAt.value = Date.now()
