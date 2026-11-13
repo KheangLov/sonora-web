@@ -18,6 +18,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Client matrix (diagnostic)
+        continue-on-error: true
+        run: node scripts/clients.mjs 2>/dev/null | grep -v "^\[YOUTUBEJS" || true
       - run: npx nuxt build
       - name: Start server
         run: |
