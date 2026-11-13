@@ -7,6 +7,9 @@ on:
   schedule:
     - cron: '17 3 * * *' # daily: catches YouTube-side breakage early
 
+permissions:
+  contents: write
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -51,6 +54,15 @@ jobs:
         with:
           name: e2e-shots
           path: e2e-shots
+      - name: Publish screenshots to the e2e-output branch
+        if: always() && github.event_name != 'pull_request'
+        run: |
+          cp server.log e2e-shots/ 2>/dev/null || true
+          cd e2e-shots && echo "${{ github.sha }} ${{ github.ref_name }}" > COMMIT
+          git init -q && git checkout -q -b e2e-output
+          git config user.name ci && git config user.email ci@users.noreply.github.com
+          git add -A && git commit -qm "e2e ${{ github.sha }}"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" e2e-output
       - name: Server log
         if: always()
         run: tail -80 server.log

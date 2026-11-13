@@ -98,7 +98,9 @@ export default defineNuxtConfig({
     generateSW: {
       navigateFallback: '/',
       navigateFallbackDenylist: [/^\/api\//],
-      globPatterns: ['**/*.{js,css,html,svg,png,ico,webp,woff2,json}'],
+      globPatterns: ['**/*.{js,css,html,svg,png,ico,webp,woff2}'],
+      // (No 'json' here: the PWA module adds Nuxt's build-id JSON itself; listing it twice breaks SW install.)
+      globIgnores: ['**/og.png'],
       cleanupOutdatedCaches: true,
       clientsClaim: true,
       skipWaiting: true,

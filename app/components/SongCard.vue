@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Song } from '#shared/types/music'
 
-const props = defineProps<{ song: Song }>()
+const props = defineProps<{ song: Song, eager?: boolean }>()
 const emit = defineEmits<{ play: [], more: [] }>()
 const player = usePlayer()
 const isCurrent = computed(() => player.current.value?.id === props.song.id)
@@ -10,7 +10,7 @@ const isCurrent = computed(() => player.current.value?.id === props.song.id)
 <template>
   <div class="card" role="button" tabindex="0" @click="emit('play')" @keydown.enter="emit('play')" @contextmenu.prevent="emit('more')">
     <div class="cover">
-      <Artwork :src="song.thumbnail" :size="156" :radius="10" />
+      <Artwork :src="song.thumbnail" :size="156" :radius="10" :eager="eager" />
       <div v-if="isCurrent" class="overlay"><EqBars :playing="player.isPlaying.value" :size="22" /></div>
       <span class="play"><Icon name="play" :size="22" /></span>
     </div>

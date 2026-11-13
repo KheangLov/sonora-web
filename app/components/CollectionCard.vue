@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import type { Collection } from '#shared/types/music'
 
-const props = defineProps<{ c: Collection }>()
+const props = defineProps<{ c: Collection, eager?: boolean }>()
 const isArtist = computed(() => props.c.id.startsWith('UC'))
 const to = computed(() => browseLink(props.c))
 </script>
 
 <template>
   <NuxtLink :to="to" class="card" :class="{ artist: isArtist }">
-    <Artwork :src="c.thumbnail" :size="156" :radius="isArtist ? '50%' : 10" />
+    <Artwork :src="c.thumbnail" :size="156" :radius="isArtist ? '50%' : 10" :eager="eager" />
     <span class="title ellipsis">{{ c.title }}</span>
     <span class="small muted clamp2">{{ c.subtitle }}</span>
   </NuxtLink>

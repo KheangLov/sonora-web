@@ -42,9 +42,13 @@ const THAI_ARTISTS = [
 ]
 
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-const wordRx = (p: string) => new RegExp(`(?<![\\p{L}\\p{N}\\p{M}])${escape(p)}(?![\\p{L}\\p{N}\\p{M}])`, 'u')
-const WORDS_RX = THAI_WORDS.map(wordRx)
-const ARTISTS_RX = THAI_ARTISTS.map(wordRx)
+/** One alternation per list (whole words / phrases only): a single scan per string, not ~150. */
+const anyWordRx = (list: string[]) => new RegExp(
+  `(?<![\\p{L}\\p{N}\\p{M}])(?:${[...new Set(list)].sort((a, b) => b.length - a.length).map(escape).join('|')})(?![\\p{L}\\p{N}\\p{M}])`,
+  'u',
+)
+const WORDS_RX = anyWordRx(THAI_WORDS)
+const ARTISTS_RX = anyWordRx(THAI_ARTISTS)
 
 const norm = (s: string) => s.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim()
 
@@ -52,13 +56,13 @@ export function isThaiText(text: string | undefined | null): boolean {
   if (!text) return false
   if (THAI_SCRIPT.test(text)) return true
   const t = norm(text)
-  return WORDS_RX.some(rx => rx.test(t))
+  return WORDS_RX.test(t)
 }
 
 function isThaiArtist(text: string | undefined | null): boolean {
   if (!text) return false
   const t = norm(text)
-  return ARTISTS_RX.some(rx => rx.test(t))
+  return ARTISTS_RX.test(t)
 }
 
 export function isBlockedQuery(q: string): boolean {

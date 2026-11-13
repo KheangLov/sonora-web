@@ -114,19 +114,22 @@ const greeting = computed(() => {
       </template>
 
       <template v-if="visibleSections">
-        <section v-for="sec in visibleSections" :key="sec.title">
-          <SectionHeader :title="sec.title" :subtitle="sec.subtitle" />
-          <div class="hscroll pad">
-            <CollectionCard v-for="c in sec.collections" :key="c.id" :c="c" />
-            <SongCard
-              v-for="(s, i) in sec.songs"
-              :key="s.id"
-              :song="s"
-              @play="player.play(sec.songs, i)"
-              @more="ui.openSongMenu(s)"
-            />
-          </div>
-        </section>
+        <OnVisible v-for="(sec, si) in visibleSections" :key="sec.title" :eager="si < 2" :min-height="262">
+          <section>
+            <SectionHeader :title="sec.title" :subtitle="sec.subtitle" />
+            <div class="hscroll pad">
+              <CollectionCard v-for="(c, ci) in sec.collections" :key="c.id" :c="c" :eager="si === 0 && ci < 3" />
+              <SongCard
+                v-for="(s, i) in sec.songs"
+                :key="s.id"
+                :song="s"
+                :eager="si === 0 && i < 3"
+                @play="player.play(sec.songs, i)"
+                @more="ui.openSongMenu(s)"
+              />
+            </div>
+          </section>
+        </OnVisible>
       </template>
       <EmptyState v-else-if="error" title="Can't reach YouTube" message="Check your connection. Your downloads still play offline.">
         <button class="btn btn-primary" @click="load(true)">Retry</button>

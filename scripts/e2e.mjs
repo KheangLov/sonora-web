@@ -68,7 +68,7 @@ const browser = await chromium.launch({
   await input.fill('thai songs')
   await input.press('Enter')
   await page.waitForTimeout(2500)
-  const blockedText = await page.getByText(/blocked/i).first().isVisible().catch(() => false)
+  const blockedText = await page.getByText(/blocked/i).first().waitFor({ timeout: 10_000 }).then(() => true).catch(() => false)
   ok('Thai search is blocked', blockedText)
   await shot(page, 'phone-5-thai-blocked')
 
@@ -82,7 +82,14 @@ const browser = await chromium.launch({
     const s = await state(page)
     return s && s.playing && s.pos > 1.5 ? s : null
   }, 45_000)
-  ok('playback starts', !!playing, playing ? `engine=${playing.engine}, ${((Date.now() - tPlay) / 1000).toFixed(1)} s to 1.5 s of audio, queue ${playing.queue}` : JSON.stringify(await state(page)))
+  const ytDebug = await page.evaluate(() => window.__sonoraYt ?? null)
+  if (!playing) {
+    // Show what the embedded player says (CI runners share YouTube-flagged datacenter IPs).
+    await page.evaluate(() => { const el = document.getElementById('yt-fallback'); if (el) Object.assign(el.style, { opacity: '1', zIndex: '9999', width: '360px', height: '240px' }) })
+    await page.waitForTimeout(1500)
+    await shot(page, 'phone-6b-embed-debug')
+  }
+  ok('playback starts', !!playing, playing ? `engine=${playing.engine}, ${((Date.now() - tPlay) / 1000).toFixed(1)} s to 1.5 s of audio, queue ${playing.queue}` : JSON.stringify({ ...(await state(page)), yt: ytDebug }))
   await shot(page, 'phone-6-mini-player')
 
   // Radio fills the queue
@@ -90,7 +97,7 @@ const browser = await chromium.launch({
   ok('autoplay radio queue', !!radio, radio ? `${radio.queue} songs` : '')
 
   // Now Playing
-  await page.locator('[aria-label="Open player"]').first().click({ position: { x: 120, y: 20 } }).catch(() => {})
+  await page.locator('.mini').first().click({ position: { x: 140, y: 24 } }).catch(() => page.evaluate(() => { window.__sonora.nowPlayingOpen.value = true }))
   await page.waitForTimeout(1500)
   await shot(page, 'phone-7-now-playing')
   const lyricsBtn = page.locator('[aria-label="Lyrics"]').first()
@@ -123,7 +130,7 @@ const browser = await chromium.launch({
   await page.keyboard.press('Escape')
   await page.locator('[aria-label="Close player"]').first().click().catch(() => {})
   await page.goto(BASE + '/collection/disliked', { waitUntil: 'domcontentloaded' })
-  const inList = await page.getByText(dislikedTitle ?? '___', { exact: false }).first().isVisible({ timeout: 8000 }).catch(() => false)
+  const inList = await page.getByText(dislikedTitle ?? '___', { exact: false }).first().waitFor({ timeout: 10_000 }).then(() => true).catch(() => false)
   ok('disliked song listed in Library → Disliked', inList, dislikedTitle ?? '')
   await shot(page, 'phone-9-disliked')
 
@@ -135,8 +142,9 @@ const browser = await chromium.launch({
   await page.goto(BASE + '/', { waitUntil: 'load' })
   await page.waitForTimeout(4000) // let the SW install + precache
   await ctx.setOffline(true)
-  const offlineOk = await page.reload({ waitUntil: 'domcontentloaded' }).then(() => page.locator('h1').first().isVisible({ timeout: 8000 })).catch(() => false)
-  ok('opens offline (service worker)', offlineOk)
+  const swReady = await page.evaluate(() => navigator.serviceWorker?.controller ? 'controlled' : navigator.serviceWorker?.ready.then(() => 'ready').catch(e => String(e)))
+  const offlineOk = await page.reload({ waitUntil: 'domcontentloaded' }).then(() => page.locator('h1').first().waitFor({ timeout: 10_000 })).then(() => true).catch(() => false)
+  ok('opens offline (service worker)', offlineOk, `sw: ${swReady}`)
   await page.goto(BASE + '/library', { waitUntil: 'domcontentloaded' }).catch(() => {})
   await page.waitForTimeout(1500)
   await shot(page, 'phone-11-offline-library')

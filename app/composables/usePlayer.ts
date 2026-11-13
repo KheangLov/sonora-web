@@ -329,7 +329,7 @@ function updateMediaSession() {
     title: s.title,
     artist: s.artist,
     album: s.album ?? 'Sonora',
-    artwork: [96, 256, 512].map(px => ({ src: art(s.thumbnail, px / 2), sizes: `${px}x${px}`, type: 'image/jpeg' })),
+    artwork: [96, 256, 512].map(px => ({ src: art(s.thumbnail, px / 2), sizes: `${px}x${px}` })),
   })
   navigator.mediaSession.playbackState = isPlaying.value ? 'playing' : 'paused'
 }

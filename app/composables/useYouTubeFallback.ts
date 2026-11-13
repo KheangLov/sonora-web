@@ -58,13 +58,17 @@ export class YouTubeFallback {
           events: {
             onReady: () => resolve(),
             onStateChange: (e: any) => {
+              ;(window as any).__sonoraYt = { ...(window as any).__sonoraYt, state: e.data }
               const S = YT.PlayerState
               if (e.data === S.PLAYING) this.events.onPlaying()
               else if (e.data === S.PAUSED) this.events.onPaused()
               else if (e.data === S.BUFFERING) this.events.onBuffering()
               else if (e.data === S.ENDED) this.events.onEnded()
             },
-            onError: (e: any) => this.events.onError(e.data),
+            onError: (e: any) => {
+              ;(window as any).__sonoraYt = { ...(window as any).__sonoraYt, error: e.data }
+              this.events.onError(e.data)
+            },
           },
         })
       })
