@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * *' # daily: catches YouTube-side breakage early
+
+jobs:
+  build-and-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx nuxt build
+      - name: Start server
+        run: |
+          PORT=3000 node .output/server/index.mjs > server.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://localhost:3000/ > /dev/null && break; sleep 1; done
+      - name: Live smoke test (YouTube Music, audio, lyrics)
+        run: ./scripts/smoke.sh
+      - name: Server log
+        if: always()
+        run: cat server.log | tail -80

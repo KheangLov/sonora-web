@@ -1,0 +1,118 @@
+/**
+ * Resolves a playable audio-only URL for a video id using youtubei.js, trying several
+ * InnerTube clients until one gives a URL that googlevideo actually serves. The URL is
+ * bound to this server's IP, so audio is proxied by /api/stream/[id].
+ */
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { Constants, Innertube, Platform, UniversalCache } from 'youtubei.js'
+import type { Types } from 'youtubei.js'
+
+// youtubei.js needs a JS evaluator to run YouTube's player code (signature + "n" transforms).
+Platform.shim.eval = (data: { output: string }, env: Record<string, unknown>) => {
+  const arg = (v: unknown) => JSON.stringify(typeof v === 'string' ? v : '')
+  // eslint-disable-next-line no-new-func
+  return new Function(`${data.output}\nreturn process(${arg(env.n)}, ${arg(env.sp)}, ${arg(env.sig)});`)()
+}
+
+type Client = Types.InnerTubeClient
+
+/** Order matters: clients that work without PO tokens from datacenter IPs first. */
+const CLIENTS: Client[] = ['ANDROID_VR', 'IOS', 'TV', 'WEB_EMBEDDED', 'MWEB', 'WEB']
+const DESKTOP_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36'
+
+export interface ResolvedAudio {
+  url: string
+  userAgent: string
+  mime: string
+  size: number
+  bitrate: number
+  client: Client
+  expiresAt: number
+}
+
+let tube: Promise<Innertube> | null = null
+function innertube(): Promise<Innertube> {
+  tube ??= Innertube.create({
+    retrieve_player: true,
+    generate_session_locally: true,
+    // The player script is cached in /tmp, which survives between warm serverless invocations.
+    cache: new UniversalCache(true, join(tmpdir(), 'sonora-ytjs')),
+  }).catch((e) => { tube = null; throw e })
+  return tube
+}
+
+const cache = new Map<string, ResolvedAudio>()
+const inflight = new Map<string, Promise<ResolvedAudio>>()
+/** Remember which client worked last, and try it first next time. */
+let preferred: Client | null = null
+
+export function invalidateAudio(id: string) {
+  cache.delete(id)
+}
+
+export function resolveAudio(id: string, fresh = false): Promise<ResolvedAudio> {
+  if (!fresh) {
+    const hit = cache.get(id)
+    if (hit && hit.expiresAt - Date.now() > 5 * 60_000) return Promise.resolve(hit)
+  }
+  const running = inflight.get(id)
+  if (running) return running
+  const p = doResolve(id).finally(() => inflight.delete(id))
+  inflight.set(id, p)
+  return p
+}
+
+async function doResolve(id: string): Promise<ResolvedAudio> {
+  const yt = await innertube()
+  const order = preferred ? [preferred, ...CLIENTS.filter(c => c !== preferred)] : CLIENTS
+  const errors: string[] = []
+
+  for (const client of order) {
+    try {
+      const info = await yt.getBasicInfo(id, { client })
+      const status = info.playability_status?.status
+      if (status !== 'OK') {
+        errors.push(`${client}: ${status} ${info.playability_status?.reason ?? ''}`.trim())
+        continue
+      }
+      const formats = (info.streaming_data?.adaptive_formats ?? []).filter(f => f.has_audio && !f.has_video)
+      if (!formats.length) { errors.push(`${client}: no audio formats`); continue }
+      // AAC in MP4 plays everywhere (incl. iOS Safari); fall back to the best Opus/WebM.
+      const mp4 = formats.filter(f => f.mime_type.startsWith('audio/mp4')).sort((a, b) => b.bitrate - a.bitrate)
+      const any = [...formats].sort((a, b) => b.bitrate - a.bitrate)
+      const format = mp4[0] ?? any[0]!
+
+      const url = await format.decipher(yt.session.player)
+      if (!url) { errors.push(`${client}: empty url`); continue }
+      const userAgent = (Constants.CLIENTS as Record<string, { USER_AGENT?: string }>)[client]?.USER_AGENT ?? DESKTOP_UA
+
+      // Make sure googlevideo really serves it before we commit to this client.
+      const probe = await fetch(url, { headers: { 'range': 'bytes=0-1', 'user-agent': userAgent } })
+      await probe.body?.cancel()
+      if (probe.status !== 206 && probe.status !== 200) { errors.push(`${client}: probe ${probe.status}`); continue }
+
+      const u = new URL(url)
+      const total = Number(probe.headers.get('content-range')?.split('/')[1])
+      const size = Number(format.content_length) || Number(u.searchParams.get('clen')) || total || 0
+      const resolved: ResolvedAudio = {
+        url,
+        userAgent,
+        mime: format.mime_type.split(';')[0] || 'audio/mp4',
+        size,
+        bitrate: format.bitrate,
+        client,
+        expiresAt: (Number(u.searchParams.get('expire')) || Date.now() / 1000 + 5 * 3600) * 1000,
+      }
+      preferred = client
+      cache.set(id, resolved)
+      if (cache.size > 500) cache.delete(cache.keys().next().value!)
+      return resolved
+    }
+    catch (e: any) {
+      errors.push(`${client}: ${e?.message ?? e}`)
+    }
+  }
+  console.error(`[stream] ${id} failed`, errors)
+  throw createError({ statusCode: 502, statusMessage: 'No playable audio stream', data: errors })
+}
