@@ -79,7 +79,10 @@ async function remove(id: number) {
             ? 'Your YouTube sign-in expired. Sign in again to get your mixes and playlists back.'
             : 'Get your personal mixes, Quick picks, liked music and playlists right here.' }}
         </p>
-        <button class="btn btn-primary" @click="ui.signInOpen.value = true"><Icon name="account" :size="18" />Sign in with Google</button>
+        <div class="row gap-12 wrap">
+          <button class="btn btn-primary" @click="ui.signIn()"><Icon name="account" :size="18" />{{ acc.googleEnabled.value ? 'Continue with Google' : 'Sign in with Google' }}</button>
+          <button v-if="acc.googleEnabled.value" class="btn btn-text small" @click="ui.signIn(true)">Other ways</button>
+        </div>
       </div>
     </div>
     <div v-else class="pad row account">
@@ -200,6 +203,7 @@ async function remove(id: number) {
   background: linear-gradient(135deg, #3a0d0d, var(--surface-3));
 }
 .connect p { margin: 0 0 6px; }
+.wrap { flex-wrap: wrap; }
 .account { gap: 12px; padding-top: 4px; padding-bottom: 8px; }
 .min0 { min-width: 0; }
 .check { display: flex; flex-direction: column; gap: 6px; padding-bottom: 8px; }

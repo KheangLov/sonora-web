@@ -25,7 +25,9 @@ jobs:
       - run: npx nuxt build
       - name: Start server
         run: |
-          PORT=3000 node .output/server/index.mjs > server.log 2>&1 &
+          # Placeholder Google client: lets CI exercise the one-click sign-in redirect + callback.
+          GOOGLE_CLIENT_ID=ci-placeholder.apps.googleusercontent.com GOOGLE_CLIENT_SECRET=ci-placeholder \
+            PORT=3000 node .output/server/index.mjs > server.log 2>&1 &
           for i in $(seq 1 30); do curl -sf http://localhost:3000/ > /dev/null && break; sleep 1; done
       - name: Live API smoke test (YouTube Music, audio, lyrics)
         run: ./scripts/smoke.sh

@@ -2,6 +2,8 @@
 export default defineNuxtPlugin(() => {
   const player = usePlayer()
   useLibrary()
+  // Finishes a Google sign-in redirect, refreshes tokens, sets the API cookies.
+  useAccount()
   player.start()
   // Read-only handle for the end-to-end test (scripts/e2e.mjs) and for debugging in DevTools.
   ;(window as any).__sonora = player

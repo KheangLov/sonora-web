@@ -21,7 +21,26 @@ export default defineEventHandler(event => withAuth(event, async (auth) => {
   ]
 
   // Signed in: your own YouTube Music home (Quick picks, Listen again, Mixed for you…) comes first.
-  const personal = auth ? await homeFeed(gl).catch(() => [] as HomeSection[]) : []
+  let personal = auth && auth.via !== 'web' ? await homeFeed(gl).catch(() => [] as HomeSection[]) : []
+  if (auth?.via === 'web') {
+    // One-click Google accounts: your likes and playlists lead the home feed.
+    const [liked, lists] = await Promise.all([dataLiked(1).catch(() => []), dataPlaylists().catch(() => [])])
+    personal = [
+      ...(liked.length ? [{ title: 'Your likes', subtitle: 'Songs you liked on YouTube', songs: liked.slice(0, 20), collections: [] }] : []),
+      ...(lists.length ? [{ title: 'Your playlists', subtitle: 'From your YouTube account', songs: [], collections: lists.slice(0, 20) }] : []),
+    ]
+    if (personal.length) {
+      // Plus everything everyone gets.
+      const general = await authStore.run(null, () => Promise.all(specs.map(async (s): Promise<HomeSection | null> => {
+        const page = await startSearch(s.query!, gl).catch(() => null)
+        return page?.songs.length ? { title: s.title, subtitle: s.subtitle, songs: page.songs.slice(0, 20), collections: [] } : null
+      })))
+      const ytHome = await authStore.run(null, () => homeFeed(gl).catch(() => [] as HomeSection[]))
+      const seen = new Set<string>()
+      return filterSections([...personal, ...general.filter((s): s is HomeSection => !!s), ...ytHome])
+        .filter(s => !seen.has(s.title.toLowerCase()) && !!seen.add(s.title.toLowerCase()))
+    }
+  }
   if (personal.length) {
     const curatedOnly = await Promise.all(specs.slice(0, 3).map(async (s): Promise<HomeSection | null> => {
       const page = await authStore.run(null, () => startSearch(s.query!, gl)).catch(() => null)

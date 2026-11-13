@@ -8,11 +8,19 @@ const queueOpen = ref(false)
 const lyricsOpen = ref(false)
 const sleepOpen = ref(false)
 const signInOpen = ref(false)
+const signInOther = ref(false)
 const nameDialog = shallowRef<{ title: string, initial?: string, confirm: string, onConfirm: (name: string) => void } | null>(null)
 
 export function useUi() {
   return {
-    songMenu, addToPlaylist, queueOpen, lyricsOpen, sleepOpen, signInOpen, nameDialog,
+    songMenu, addToPlaylist, queueOpen, lyricsOpen, sleepOpen, signInOpen, signInOther, nameDialog,
+    /** One tap: straight to Google when it's set up, otherwise the sign-in sheet. */
+    signIn(other = false) {
+      const acc = useAccount()
+      if (!other && acc.googleEnabled.value) return acc.startGoogleSignIn()
+      signInOther.value = other
+      signInOpen.value = true
+    },
     openSongMenu: (song: Song, playlistId?: number) => { songMenu.value = { song, playlistId } },
   }
 }

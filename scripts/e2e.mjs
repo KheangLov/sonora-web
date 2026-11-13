@@ -161,8 +161,33 @@ const browser = await chromium.launch({
   await page.waitForTimeout(400)
   await shot(page, 'phone-10a-library-app')
 
-  // YouTube Music sign-in: the Google device code appears
-  await page.getByRole('button', { name: /Sign in with Google/ }).first().click().catch(() => {})
+  // One-click Google sign-in: the button goes straight to Google's account chooser
+  let googleUrl = null
+  await page.route('https://accounts.google.com/**', (route) => { googleUrl = route.request().url(); route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>Google</h1>' }) })
+  await page.getByRole('button', { name: /Continue with Google/ }).first().click().catch(() => {})
+  await page.waitForURL(/accounts\.google\.com/, { timeout: 10_000 }).catch(() => {})
+  ok('Continue with Google opens Google sign-in in one tap', !!googleUrl && /scope=[^&]*youtube\.readonly/.test(googleUrl), (googleUrl ?? '').slice(0, 90))
+  // …and coming back signed in (simulated callback with this browser's own state)
+  await page.goto(BASE + '/library', { waitUntil: 'domcontentloaded' })
+  const state = await page.evaluate(() => localStorage.getItem('sonora-oauth-state'))
+  const payload = Buffer.from(JSON.stringify({ state, accessToken: 'ya29.e2e-fake-token-not-real-0000000000', refreshToken: 'x', expiresIn: 3600, name: 'E2E Tester', email: 'e2e@example.com', photo: null })).toString('base64url')
+  await page.goto(`${BASE}/library#sonora-auth=${payload}`, { waitUntil: 'domcontentloaded' })
+  const signedInOk = await page.getByText('E2E Tester').first().waitFor({ timeout: 10_000 }).then(() => true).catch(() => false)
+  const hashCleared = !(await page.evaluate(() => location.hash)).includes('sonora-auth')
+  ok('returning from Google signs you in', signedInOk && hashCleared, `name shown: ${signedInOk}, token removed from URL: ${hashCleared}`)
+  await shot(page, 'phone-10c-signed-in')
+  // A forged return (wrong state) is refused
+  await page.locator('[aria-label="Sign out"]:visible').first().click().catch(() => {})
+  await page.waitForTimeout(800)
+  const forged = Buffer.from(JSON.stringify({ state: 'not-the-right-state', accessToken: 'ya29.forged-000000000000000000', name: 'Mallory' })).toString('base64url')
+  await page.goto(`${BASE}/library#sonora-auth=${forged}`, { waitUntil: 'domcontentloaded' })
+  await page.waitForTimeout(1500)
+  ok('forged sign-in is refused', !(await page.getByText('Mallory').first().isVisible().catch(() => false)))
+  await page.unroute('https://accounts.google.com/**')
+
+  // Other ways: the Google device code appears
+  await page.goto(BASE + '/library', { waitUntil: 'domcontentloaded' })
+  await page.getByRole('button', { name: /^Other ways$/ }).first().click().catch(() => {})
   const code = await page.locator('.code span').first().waitFor({ timeout: 20_000 }).then(() => page.locator('.code span').first().textContent()).catch(() => null)
   ok('sign-in shows a Google device code', !!code && code.length >= 6, code ?? '')
   await page.waitForTimeout(500)

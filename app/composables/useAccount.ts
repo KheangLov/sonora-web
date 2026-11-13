@@ -6,7 +6,7 @@ import { computed, reactive, ref } from 'vue'
  * is handed to Sonora's server as a first-party cookie scoped to /api, so every API call and
  * every <audio> request is signed in. Nothing is stored on the server.
  */
-export type SignInVia = 'google' | 'tv' | 'cookie'
+export type SignInVia = 'web' | 'google' | 'tv' | 'cookie'
 export interface Account {
   via: SignInVia
   refreshToken?: string
@@ -23,6 +23,9 @@ export interface Account {
 const KEY = 'sonora-account'
 const TOKEN_COOKIE = 'sonora_yt_token'
 const YTCOOKIE_COOKIE = 'sonora_yt_cookie'
+const VIA_COOKIE = 'sonora_yt_via'
+const STATE_KEY = 'sonora-oauth-state'
+const googleEnabled = ref(false)
 
 const account = ref<Account | null>(null)
 /** Bumps on sign in / out, so feeds reload. */
@@ -37,6 +40,8 @@ function load() {
   try { account.value = JSON.parse(localStorage.getItem(KEY) ?? 'null') } catch { account.value = null }
   applyCookies()
   startTimer()
+  finishGoogleRedirect()
+  $fetch<{ google: boolean }>('/api/auth/config').then((c) => { googleEnabled.value = c.google }).catch(() => {})
   window.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') ensureFresh() })
   window.addEventListener('storage', (e) => {
     if (e.key !== KEY) return
@@ -64,8 +69,10 @@ function applyCookies() {
   if (!a || a.expired) {
     setCookie(TOKEN_COOKIE, '', 0)
     setCookie(YTCOOKIE_COOKIE, '', 0)
+    setCookie(VIA_COOKIE, '', 0)
     return
   }
+  setCookie(VIA_COOKIE, a.via, 400 * 86400)
   if (a.via === 'cookie' && a.cookie) {
     setCookie(YTCOOKIE_COOKIE, a.cookie, 400 * 86400)
     setCookie(TOKEN_COOKIE, '', 0)
@@ -135,9 +142,40 @@ async function signedIn(a: Account) {
   account.value = a
   save()
   applyCookies()
-  await fetchProfile()
+  if (!a.name) await fetchProfile()
   await changed()
   useToast().show(account.value?.name ? `Signed in as ${account.value.name}` : 'Signed in to YouTube Music')
+}
+
+// ------------------------------------------------------------------ one-click Google sign-in (redirect)
+
+/** Off to Google's account chooser; we come back to this same page, signed in. */
+function startGoogleSignIn() {
+  const bytes = crypto.getRandomValues(new Uint8Array(18))
+  const nonce = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  const state = `${nonce}|${location.pathname}`
+  try { localStorage.setItem(STATE_KEY, state) } catch {}
+  location.href = `/api/auth/google?state=${encodeURIComponent(state)}`
+}
+
+/** Back from Google: the tokens are in the URL fragment (never sent to any server). */
+function finishGoogleRedirect() {
+  const m = /[#&]sonora-auth=([\w-]+)/.exec(location.hash)
+  if (!m) return
+  history.replaceState(null, '', location.pathname + location.search)
+  let data: Record<string, any> = {}
+  try { data = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(m[1]!.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)))) } catch { return }
+  const expected = localStorage.getItem(STATE_KEY)
+  localStorage.removeItem(STATE_KEY)
+  if (!expected || data.state !== expected) { useToast().show('Sign-in was interrupted. Please try again.'); return }
+  if (data.error || !data.accessToken) { useToast().show(data.error || 'Google sign-in failed'); return }
+  signedIn({
+    via: 'web',
+    accessToken: data.accessToken,
+    refreshToken: data.refreshToken,
+    expiresAt: Date.now() + (Number(data.expiresIn) || 3600) * 1000,
+    name: data.name, handle: data.email, photo: data.photo,
+  })
 }
 
 // ------------------------------------------------------------------ device flow ("Sign in with Google")
@@ -232,6 +270,9 @@ export function useAccount() {
       return (h >>> 0).toString(36)
     }),
     ensureFresh,
+    /** One-click "Continue with Google" is set up on this server. */
+    googleEnabled,
+    startGoogleSignIn,
     startDeviceLogin,
     cancelDeviceLogin,
     signInWithCookie,

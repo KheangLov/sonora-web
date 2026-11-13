@@ -1,11 +1,14 @@
 /**
  * YouTube Music sign-in.
  *
- * Two ways in, both kept in the listener's own browser (like the Android app keeps its cookie
+ * Three ways in, all kept in the listener's own browser (like the Android app keeps its cookie
  * on the phone). The server stores nothing:
- *  - "Sign in with Google": the TV-style device flow. You enter a short code at google.com/device.
- *    Uses your own Google OAuth client (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET, type
- *    "TVs and Limited Input devices") when set, otherwise YouTube's TV client.
+ *  - "Continue with Google" (one click): the normal Google sign-in redirect. Needs a Google OAuth
+ *    client of type "Web application" in GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET. Your liked music
+ *    and playlists then come from the YouTube Data API.
+ *  - A code on another device: the TV-style device flow (google.com/device). Uses
+ *    GOOGLE_TV_CLIENT_ID / GOOGLE_TV_CLIENT_SECRET ("TVs and Limited Input devices") when set,
+ *    otherwise YouTube's own TV client.
  *  - A YouTube cookie pasted from a signed-in browser (the Android app's method).
  *
  * The browser sends the short-lived access token (or the cookie) as a first-party cookie scoped
@@ -15,20 +18,25 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { createHash, randomUUID } from 'node:crypto'
 import type { H3Event } from 'h3'
 
-export interface YtAuth { bearer?: string, cookie?: string }
+export type AuthVia = 'web' | 'google' | 'tv' | 'cookie'
+export interface YtAuth { bearer?: string, cookie?: string, via?: AuthVia }
 
 /** Auth for the current request, visible to ytm() and the stream resolver without threading it through. */
 export const authStore = new AsyncLocalStorage<YtAuth | null>()
 
 export const TOKEN_COOKIE = 'sonora_yt_token'
 export const YTCOOKIE_COOKIE = 'sonora_yt_cookie'
+export const VIA_COOKIE = 'sonora_yt_via'
 
 export function getAuth(event: H3Event): YtAuth | null {
   const c = parseCookies(event)
   const bearer = c[TOKEN_COOKIE]
-  if (bearer && /^[\w.\-~+/=]{20,4096}$/.test(bearer)) return { bearer }
+  if (bearer && /^[\w.\-~+/=]{20,4096}$/.test(bearer)) {
+    const via = c[VIA_COOKIE]
+    return { bearer, via: via === 'web' || via === 'google' ? via : 'tv' }
+  }
   const cookie = c[YTCOOKIE_COOKIE]
-  if (cookie && /(?:^|;\s*)(?:SAPISID|__Secure-3PAPISID)=/.test(cookie)) return { cookie }
+  if (cookie && /(?:^|;\s*)(?:SAPISID|__Secure-3PAPISID)=/.test(cookie)) return { cookie, via: 'cookie' }
   return null
 }
 
@@ -45,7 +53,8 @@ export function withAuth<T>(event: H3Event, fn: (auth: YtAuth | null) => Promise
 
 /** Headers that sign a YouTube / YouTube Music InnerTube request. */
 export function authHeaders(auth: YtAuth | null | undefined, origin: string): Record<string, string> {
-  if (!auth) return {}
+  // One-click (web) tokens are for the official YouTube Data API only, not YouTube's internal API.
+  if (!auth || auth.via === 'web') return {}
   if (auth.bearer) return { 'authorization': `Bearer ${auth.bearer}`, 'x-goog-request-time': String(Math.floor(Date.now() / 1000)) }
   const cookie = auth.cookie!
   const sapisid = /(?:^|;\s*)SAPISID=([^;]+)/.exec(cookie)?.[1] ?? /(?:^|;\s*)__Secure-3PAPISID=([^;]+)/.exec(cookie)?.[1]
@@ -71,14 +80,19 @@ export function trimYouTubeCookie(raw: string): string {
 
 // ------------------------------------------------------------------ OAuth device flow
 
-export type OAuthVia = 'google' | 'tv'
+export type OAuthVia = 'google' | 'tv' | 'web'
 interface OAuthClient { via: OAuthVia, id: string, secret: string, codeUrl: string, tokenUrl: string, scope: string }
 
 let tvClient: Promise<OAuthClient> | null = null
 
 export function oauthClient(via?: OAuthVia): Promise<OAuthClient> {
-  const id = process.env.GOOGLE_CLIENT_ID?.trim()
-  const secret = process.env.GOOGLE_CLIENT_SECRET?.trim()
+  if (via === 'web') {
+    const web = webClient()
+    if (!web) throw createError({ statusCode: 503, statusMessage: 'Google sign-in is not set up on this server' })
+    return Promise.resolve({ via: 'web', id: web.id, secret: web.secret, codeUrl: '', tokenUrl: 'https://oauth2.googleapis.com/token', scope: WEB_SCOPES })
+  }
+  const id = process.env.GOOGLE_TV_CLIENT_ID?.trim()
+  const secret = process.env.GOOGLE_TV_CLIENT_SECRET?.trim()
   if (id && secret && via !== 'tv') {
     return Promise.resolve({
       via: 'google', id, secret,
@@ -152,7 +166,7 @@ export async function exchangeToken(via: OAuthVia, grant: { deviceCode: string }
     body.refresh_token = grant.refreshToken
     body.grant_type = 'refresh_token'
   }
-  const r = await postJson(c.tokenUrl, body, c.via === 'google')
+  const r = await postJson(c.tokenUrl, body, c.via !== 'tv')
   const err = String(r.data.error ?? '')
   if (r.data.access_token) {
     return { status: 'ok', accessToken: String(r.data.access_token), refreshToken: r.data.refresh_token ? String(r.data.refresh_token) : undefined, expiresIn: Number(r.data.expires_in) || 3600 }
@@ -162,4 +176,42 @@ export async function exchangeToken(via: OAuthVia, grant: { deviceCode: string }
   if (err === 'access_denied') return { status: 'denied' }
   if (err === 'expired_token') return { status: 'expired' }
   return { status: 'error', message: String(r.data.error_description ?? err ?? r.status) }
+}
+
+// ------------------------------------------------------------------ one-click Google sign-in (redirect)
+
+export const WEB_SCOPES = 'openid email profile https://www.googleapis.com/auth/youtube.readonly'
+
+export function webClient(): { id: string, secret: string } | null {
+  const id = process.env.GOOGLE_CLIENT_ID?.trim()
+  const secret = process.env.GOOGLE_CLIENT_SECRET?.trim()
+  return id && secret ? { id, secret } : null
+}
+
+/** https://your-site/api/auth/callback, for whichever domain the visitor is on. */
+export function callbackUrl(event: H3Event): string {
+  const fixed = process.env.GOOGLE_REDIRECT_URI?.trim()
+  if (fixed) return fixed
+  const url = getRequestURL(event, { xForwardedHost: true, xForwardedProto: true })
+  return `${url.protocol}//${url.host}/api/auth/callback`
+}
+
+export async function exchangeAuthCode(event: H3Event, code: string) {
+  const web = webClient()
+  if (!web) throw createError({ statusCode: 503, statusMessage: 'Google sign-in is not set up' })
+  const r = await postJson('https://oauth2.googleapis.com/token', {
+    code, client_id: web.id, client_secret: web.secret, redirect_uri: callbackUrl(event), grant_type: 'authorization_code',
+  }, true)
+  if (!r.data.access_token) throw createError({ statusCode: 400, statusMessage: String(r.data.error_description ?? r.data.error ?? 'Sign-in failed') })
+  // The ID token came straight from Google over TLS in this request, so reading it is safe.
+  let profile: { name?: string, email?: string, picture?: string } = {}
+  try { profile = JSON.parse(Buffer.from(String(r.data.id_token).split('.')[1]!, 'base64url').toString()) } catch {}
+  return {
+    accessToken: String(r.data.access_token),
+    refreshToken: r.data.refresh_token ? String(r.data.refresh_token) : undefined,
+    expiresIn: Number(r.data.expires_in) || 3600,
+    name: profile.name ?? null,
+    email: profile.email ?? null,
+    photo: profile.picture ?? null,
+  }
 }

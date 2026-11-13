@@ -113,7 +113,8 @@ export function resolveAudio(id: string, fresh = false): Promise<ResolvedAudio> 
 async function doResolve(id: string): Promise<ResolvedAudio> {
   const errors: string[] = []
   const attempts: [Promise<Innertube>, Client][] = []
-  const signed = authStore.getStore() ? innertubeSigned() : null
+  const a = authStore.getStore()
+  const signed = a && a.via !== 'web' ? innertubeSigned() : null
   if (signed) for (const c of SIGNED_CLIENTS) attempts.push([signed, c])
   const withCookie = innertubeAuthed()
   if (withCookie) for (const c of COOKIE_CLIENTS) attempts.push([withCookie, c])

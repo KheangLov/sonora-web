@@ -38,6 +38,16 @@ check "signed-in home is private ($CC)" "$(echo "$CC" | grep -qi 'private' && ec
 BAD=$(curl -s -o /dev/null -w "%{http_code}" -X POST -H 'content-type: application/json' -d '{"cookie":"SID=abc; SAPISID=fake"}' "$BASE/api/auth/cookie")
 check "bad cookie rejected ($BAD)" "$([ "$BAD" = "401" ] && echo ok)" ""
 
+# One-click Google sign-in: redirect to Google with our client + callback; callback errors come back to the app
+CFG=$(j "/api/auth/config"); check "one-click Google sign-in enabled ($CFG)" "$(echo "$CFG" | grep -q '"google":true' && echo ok)" "$CFG"
+ST="abcdefghijklmnopqrstuvwx|/library"
+LOC=$(curl -s -o /dev/null -w "%{redirect_url}" "$BASE/api/auth/google?state=$(node -e 'console.log(encodeURIComponent(process.argv[1]))' "$ST")")
+check "Continue with Google → accounts.google.com" "$(echo "$LOC" | grep -q '^https://accounts.google.com/o/oauth2/v2/auth?.*client_id=ci-placeholder.*redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fapi%2Fauth%2Fcallback.*youtube.readonly.*access_type=offline' && echo ok)" "$LOC"
+CB=$(curl -s -o /dev/null -w "%{redirect_url}" "$BASE/api/auth/callback?error=access_denied&state=$(node -e 'console.log(encodeURIComponent(process.argv[1]))' "$ST")")
+check "callback returns to the app (${CB:0:60}…)" "$(echo "$CB" | grep -q '/library#sonora-auth=' && echo ok)" "$CB"
+CB2=$(curl -s -o /dev/null -w "%{redirect_url}" "$BASE/api/auth/callback?code=bad-code&state=$(node -e 'console.log(encodeURIComponent(process.argv[1]))' "$ST")")
+check "bad code handled" "$(echo "$CB2" | grep -q '#sonora-auth=' && echo ok)" "$CB2"
+
 for vid in "$ID" "kJQP7kiw5Fk" "dQw4w9WgXcQ"; do
   curl -s --max-time 60 -D /tmp/h.txt -o /tmp/a.bin -H "Range: bytes=0-262143" "$BASE/api/stream/$vid"
   SZ=$(stat -c %s /tmp/a.bin); ST=$(head -1 /tmp/h.txt | awk '{print $2}')
