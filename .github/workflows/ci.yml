@@ -21,6 +21,9 @@ jobs:
       - name: Client matrix (diagnostic)
         continue-on-error: true
         run: node scripts/clients.mjs 2>/dev/null | grep -v "^\[YOUTUBEJS" || true
+      - name: PO token (diagnostic)
+        continue-on-error: true
+        run: node scripts/potoken.mjs 2>&1 | grep -v "^\[YOUTUBEJS" | grep -E "^PO|poToken|Error|error" | head -40 || true
       - run: npx nuxt build
       - name: Start server
         run: |
