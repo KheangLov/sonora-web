@@ -78,8 +78,9 @@ const WORD = /[\p{L}\p{N}\p{M}]+/gu
 const MIN_SCORE = -40
 
 const normalize = (s: string) => s.normalize('NFKC').toLowerCase().replace(/’/g, '\'').replace(/\s+/g, ' ').trim()
-const tokenize = (s: string) => [...new Set((s.match(WORD) ?? []).filter(t => t.length > 1 || [...t].some(c => c.codePointAt(0)! > 0x2FF)))]
-const containsWord = (s: string, w: string) => w.includes(' ') ? s.includes(w) : (s.match(WORD) ?? []).includes(w)
+const words = (s: string): string[] => s.match(WORD) ?? []
+const tokenize = (s: string) => [...new Set(words(s).filter(t => t.length > 1 || [...t].some(c => c.codePointAt(0)! > 0x2FF)))]
+const containsWord = (s: string, w: string) => w.includes(' ') ? s.includes(w) : words(s).includes(w)
 
 export function dedupeKey(song: Song): string {
   const title = normalize(song.title).replace(/[([].*?[)\]]/g, '')

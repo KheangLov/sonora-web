@@ -17,8 +17,14 @@ Platform.shim.eval = (data: { output: string }, env: Record<string, unknown>) =>
 
 type Client = Types.InnerTubeClient
 
-/** Order matters: clients that work without PO tokens from datacenter IPs first. */
-const CLIENTS: Client[] = ['ANDROID_VR', 'IOS', 'TV', 'WEB_EMBEDDED', 'MWEB', 'WEB']
+/**
+ * Clients that return audio without PO tokens (verified live in CI). When this server's IP
+ * gets YouTube's "confirm you're not a bot" check, all of them fail together, so we stop early
+ * and let the browser fall back to the embedded player (see app/composables/usePlayer.ts).
+ */
+const CLIENTS: Client[] = ['ANDROID_VR', 'IOS', 'VISIONOS', 'YTMUSIC', 'YTKIDS', 'WEB_EMBEDDED']
+/** With a signed-in cookie (YT_COOKIE env), these clients also pass the bot check. */
+const COOKIE_CLIENTS: Client[] = ['TV', 'WEB_EMBEDDED']
 const DESKTOP_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36'
 
 export interface ResolvedAudio {
@@ -31,16 +37,32 @@ export interface ResolvedAudio {
   expiresAt: number
 }
 
+const playerCache = () => new UniversalCache(true, join(tmpdir(), 'sonora-ytjs'))
+
 let tube: Promise<Innertube> | null = null
 function innertube(): Promise<Innertube> {
   tube ??= Innertube.create({
     retrieve_player: true,
     generate_session_locally: true,
     // The player script is cached in /tmp, which survives between warm serverless invocations.
-    cache: new UniversalCache(true, join(tmpdir(), 'sonora-ytjs')),
+    cache: playerCache(),
   }).catch((e) => { tube = null; throw e })
   return tube
 }
+
+/** Optional: a YouTube cookie (from a spare Google account) makes server streaming much more reliable. */
+let authed: Promise<Innertube> | null = null
+function innertubeAuthed(): Promise<Innertube> | null {
+  const cookie = process.env.YT_COOKIE?.trim()
+  if (!cookie) return null
+  authed ??= Innertube.create({ cookie, retrieve_player: true, cache: playerCache() })
+    .catch((e) => { authed = null; throw e })
+  return authed
+}
+
+/** Set when YouTube bot-checks this server; the browser uses its fallback player meanwhile. */
+let botCheckedUntil = 0
+export const isBotChecked = () => Date.now() < botCheckedUntil
 
 const cache = new Map<string, ResolvedAudio>()
 const inflight = new Map<string, Promise<ResolvedAudio>>()
@@ -64,16 +86,28 @@ export function resolveAudio(id: string, fresh = false): Promise<ResolvedAudio> 
 }
 
 async function doResolve(id: string): Promise<ResolvedAudio> {
-  const yt = await innertube()
-  const order = preferred ? [preferred, ...CLIENTS.filter(c => c !== preferred)] : CLIENTS
   const errors: string[] = []
+  const attempts: [Promise<Innertube>, Client][] = []
+  const withCookie = innertubeAuthed()
+  if (withCookie) for (const c of COOKIE_CLIENTS) attempts.push([withCookie, c])
+  if (!isBotChecked()) {
+    const order = preferred ? [preferred, ...CLIENTS.filter(c => c !== preferred)] : CLIENTS
+    for (const c of order) attempts.push([innertube(), c])
+  }
+  if (!attempts.length) throw createError({ statusCode: 503, statusMessage: 'bot-check' })
+  let botChecks = 0
 
-  for (const client of order) {
+  for (const [ytP, client] of attempts) {
+    // Once two clients say "confirm you're not a bot", the IP is flagged: fail fast.
+    if (botChecks >= 2) break
     try {
+      const yt = await ytP
       const info = await yt.getBasicInfo(id, { client })
       const status = info.playability_status?.status
       if (status !== 'OK') {
-        errors.push(`${client}: ${status} ${info.playability_status?.reason ?? ''}`.trim())
+        const reason = info.playability_status?.reason ?? ''
+        if (/not a bot/i.test(reason)) botChecks++
+        errors.push(`${client}: ${status} ${reason}`.trim())
         continue
       }
       const formats = (info.streaming_data?.adaptive_formats ?? []).filter(f => f.has_audio && !f.has_video)
@@ -104,7 +138,7 @@ async function doResolve(id: string): Promise<ResolvedAudio> {
         client,
         expiresAt: (Number(u.searchParams.get('expire')) || Date.now() / 1000 + 5 * 3600) * 1000,
       }
-      preferred = client
+      if (ytP !== withCookie) preferred = client
       cache.set(id, resolved)
       if (cache.size > 500) cache.delete(cache.keys().next().value!)
       return resolved
@@ -113,6 +147,11 @@ async function doResolve(id: string): Promise<ResolvedAudio> {
       errors.push(`${client}: ${e?.message ?? e}`)
     }
   }
+  if (botChecks >= 2) botCheckedUntil = Date.now() + 10 * 60_000
   console.error(`[stream] ${id} failed`, errors)
-  throw createError({ statusCode: 502, statusMessage: 'No playable audio stream', data: errors })
+  throw createError({
+    statusCode: botChecks >= 2 ? 503 : 502,
+    statusMessage: botChecks >= 2 ? 'bot-check' : 'No playable audio stream',
+    data: errors,
+  })
 }

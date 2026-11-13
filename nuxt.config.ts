@@ -95,7 +95,7 @@ export default defineNuxtConfig({
         { name: 'Your Library', url: '/library', icons: [{ src: '/pwa-192.png', sizes: '192x192' }] },
       ],
     },
-    workbox: {
+    generateSW: {
       navigateFallback: '/',
       navigateFallbackDenylist: [/^\/api\//],
       globPatterns: ['**/*.{js,css,html,svg,png,ico,webp,woff2,json}'],

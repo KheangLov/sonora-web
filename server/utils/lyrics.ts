@@ -26,7 +26,8 @@ export async function findLyrics(id: string, rawTitle: string, rawArtist: string
     })
     if (has(exact)) return toResult(exact!)
 
-    for (const params of [{ track_name: title, artist_name: artist }, { q: `${title} ${artist}`.trim() }, { q: title }]) {
+    const attempts: Record<string, string>[] = [{ track_name: title, artist_name: artist }, { q: `${title} ${artist}`.trim() }, { q: title }]
+    for (const params of attempts) {
       const list = await lrclib<LrcItem[]>('/api/search', params)
       const candidates = (list ?? []).filter(has)
         .filter(c => duration <= 0 || !c.duration || Math.abs(c.duration - duration) <= 4)
