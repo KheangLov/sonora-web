@@ -101,15 +101,58 @@ function ensureAudio(): HTMLAudioElement {
   return audio
 }
 
+// ------------------------------------------------------------------ embeddable alternatives
+// YouTube Music "Topic" art tracks often refuse to play embedded (error 101/150). Then we play
+// another upload of the same song (official video / lyric video / audio) with a matching length,
+// and remember the swap so it's instant next time.
+const ALIAS_KEY = 'sonora-embed-alias'
+let aliases: Record<string, string> = {}
+try { aliases = JSON.parse(localStorage.getItem(ALIAS_KEY) ?? '{}') } catch {}
+let altFor: { id: string, list: string[], at: number, playing: string } | null = null
+
+function embedId(song: Song): string {
+  return aliases[song.id] ?? song.id
+}
+
+async function tryAlternative(song: Song): Promise<boolean> {
+  if (altFor?.id !== song.id) {
+    let list: string[] = []
+    try {
+      const alts = await $fetch<Song[]>(`/api/alternatives/${song.id}`, {
+        query: { title: song.title, artist: song.artist, duration: song.duration || Math.round(duration.value) },
+      })
+      list = alts.map(a => a.id).filter(x => x !== aliases[song.id])
+    }
+    catch {}
+    altFor = { id: song.id, list, at: 0, playing: song.id }
+  }
+  if (current.value?.id !== song.id || altFor.at >= altFor.list.length) return false
+  const next = altFor.list[altFor.at++]!
+  altFor.playing = next
+  await ensureYt().load(next, position.value, true)
+  return true
+}
+
+function rememberAlias(song: Song | null) {
+  if (!song || altFor?.id !== song.id || altFor.playing === song.id) return
+  aliases[song.id] = altFor.playing
+  try { localStorage.setItem(ALIAS_KEY, JSON.stringify(aliases)) } catch {}
+}
+
 function ensureYt(): YouTubeFallback {
   yt ??= new YouTubeFallback({
-    onPlaying: () => { isPlaying.value = true; isBuffering.value = false; errorStreak = 0; updateMediaSession() },
+    onPlaying: () => { isPlaying.value = true; isBuffering.value = false; errorStreak = 0; rememberAlias(current.value); updateMediaSession() },
     onPaused: () => { isPlaying.value = false; updateMediaSession() },
     onBuffering: () => { isBuffering.value = true },
     onEnded,
-    onError: (code) => {
-      // 101/150: the uploader doesn't allow embedding.
-      toast(code === 101 || code === 150 ? 'This song can\'t be played here — skipping' : 'Couldn\'t play this song — skipping')
+    onError: async (code) => {
+      const song = current.value
+      // 101/150/152: this upload can't be embedded. Try another upload of the same song.
+      if (song && (code === 101 || code === 150 || code === 152)) {
+        if (aliases[song.id]) { delete aliases[song.id]; try { localStorage.setItem(ALIAS_KEY, JSON.stringify(aliases)) } catch {} }
+        if (await tryAlternative(song).catch(() => false)) return
+      }
+      toast('Couldn\'t play this song — skipping')
       skipAfterError()
     },
   })
@@ -200,7 +243,8 @@ async function load(startAt = 0, autoplay = true) {
   // 3. Fallback: YouTube's embedded player from the listener's own connection.
   engine.value = 'youtube'
   try {
-    await ensureYt().load(song.id, startAt, autoplay)
+    altFor = null
+    await ensureYt().load(embedId(song), startAt, autoplay)
     startYtPoll()
   }
   catch {

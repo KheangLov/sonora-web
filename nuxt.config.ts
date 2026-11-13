@@ -49,7 +49,7 @@ export default defineNuxtConfig({
     // Singapore: closest Vercel region to Cambodia.
     vercel: {
       regions: ['sin1'],
-      functions: { maxDuration: 60, memory: 1024, supportsResponseStreaming: true },
+      functions: { maxDuration: 60, memory: 1024, supportsResponseStreaming: true, regions: ['sin1'] },
     },
     compressPublicAssets: { brotli: true, gzip: true },
     minify: true,
