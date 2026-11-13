@@ -25,6 +25,16 @@ Optional: set `YT_COOKIE` (the cookie of a spare Google account) in Vercel. Sign
 2. Functions run in `sin1` (Singapore), which is closest to Cambodia (`vercel.json`).
 3. API responses are cached at Vercel's edge: home 30 min, search 1 h, lyrics 7 days.
 
+## Sign-in
+- **Continue with Google (one tap):** the normal Google sign-in redirect. It needs a Google OAuth client, set up once:
+  1. Go to [console.cloud.google.com](https://console.cloud.google.com) and create a project.
+  2. APIs & Services → Library → enable **YouTube Data API v3**.
+  3. Google Auth Platform → Branding: app name "Sonora". Then Audience: External, add your Gmail as a test user (or publish the app). Then Data access: add the scope `.../auth/youtube.readonly`.
+  4. Clients → Create client → **Web application** → Authorized redirect URI: `https://YOUR-DOMAIN/api/auth/callback`
+  5. In Vercel → Settings → Environment Variables, add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, then redeploy.
+- **Other ways:** enter a code at google.com/device (works with no setup), or paste a YouTube cookie.
+- Sign-ins stay in the browser. The server stores nothing, and signed-in responses are never cached at the CDN.
+
 ## Develop
 ```bash
 npm install
