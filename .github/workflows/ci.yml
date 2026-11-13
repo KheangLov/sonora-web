@@ -18,6 +18,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Client matrix (diagnostic, flags the IP)
+        run: node scripts/clients.mjs 2>/dev/null | grep -v "^\[YOUTUBEJS" || true
+      - name: PO token (diagnostic)
+        run: timeout 240 node scripts/potoken.mjs 2>&1 | grep -v "^\[YOUTUBEJS" | grep -vi "^\s*at " | head -60 || true
       - run: npx nuxt build
       - name: Start server
         run: |
