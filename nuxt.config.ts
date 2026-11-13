@@ -29,6 +29,8 @@ export default defineNuxtConfig({
         { property: 'og:image', content: '/og.png' },
       ],
       link: [
+        // Static in the HTML (not added by JS later): browsers need it to offer "Install".
+        { rel: 'manifest', href: '/manifest.webmanifest' },
         { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
         { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' },
         { rel: 'preconnect', href: 'https://i.ytimg.com', crossorigin: '' },

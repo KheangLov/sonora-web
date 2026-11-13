@@ -207,7 +207,8 @@ const browser = await chromium.launch({
   const cdp = await ctx.newCDPSession(page)
   const inst = await cdp.send('Page.getInstallabilityErrors').catch(e => ({ installabilityErrors: [{ errorId: String(e) }] }))
   const man = await cdp.send('Page.getAppManifest').catch(() => ({ errors: [{ message: 'no manifest' }] }))
-  const errs = [...(inst.installabilityErrors ?? []).map(e => e.errorId), ...(man.errors ?? []).filter(e => e.critical).map(e => e.message)]
+  // 'in-incognito' only means Playwright's throwaway profile; it says nothing about the app.
+  const errs = [...(inst.installabilityErrors ?? []).map(e => e.errorId).filter(id => id !== 'in-incognito'), ...(man.errors ?? []).filter(e => e.critical).map(e => e.message)]
   ok('Chrome says Sonora is installable', errs.length === 0, errs.join(', ') || `manifest ok (${man.errors?.length ?? 0} warnings: ${(man.errors ?? []).map(e => e.message).join(' | ').slice(0, 200)})`)
   await page.locator('.card').first().click()
   const playing = await waitFor(async () => { const s = await state(page); return s && s.playing && s.pos > 1 ? s : null }, 45_000)
