@@ -40,7 +40,6 @@ function load() {
   try { account.value = JSON.parse(localStorage.getItem(KEY) ?? 'null') } catch { account.value = null }
   applyCookies()
   startTimer()
-  finishGoogleRedirect()
   window.addEventListener('hashchange', finishGoogleRedirect)
   $fetch<{ google: boolean }>('/api/auth/config').then((c) => { googleEnabled.value = c.google }).catch(() => {})
   window.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') ensureFresh() })
@@ -163,7 +162,15 @@ function startGoogleSignIn() {
 function finishGoogleRedirect() {
   const m = /[#&]sonora-auth=([\w-]+)/.exec(location.hash)
   if (!m) return
-  history.replaceState(null, '', location.pathname + location.search)
+  // Take the tokens out of the address bar (and history) right away. The router would put the
+  // initial hash back, so clear it through the router too.
+  history.replaceState(history.state, '', location.pathname + location.search)
+  try {
+    const router = useRouter()
+    const r = router.currentRoute.value
+    if (r.hash) router.replace({ path: r.path, query: r.query, hash: '' })
+  }
+  catch {}
   let data: Record<string, any> = {}
   try { data = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(m[1]!.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)))) } catch { return }
   const expected = localStorage.getItem(STATE_KEY)
@@ -277,6 +284,7 @@ export function useAccount() {
     startDeviceLogin,
     cancelDeviceLogin,
     signInWithCookie,
+    finishGoogleRedirect,
     signOut,
     refreshProfile: fetchProfile,
   }

@@ -168,6 +168,7 @@ const browser = await chromium.launch({
   await gBtn.waitFor({ timeout: 10_000 }).catch(() => {})
   await gBtn.click().catch(() => {})
   await page.waitForURL(/accounts\.google\.com/, { timeout: 10_000 }).catch(() => {})
+  googleUrl ??= /accounts\.google\.com/.test(page.url()) ? page.url() : null
   ok('Continue with Google opens Google sign-in in one tap', !!googleUrl && /scope=[^&]*youtube\.readonly/.test(googleUrl), (googleUrl ?? '').slice(0, 90))
   // …and coming back signed in (simulated callback with this browser's own state)
   await page.goto(BASE + '/library', { waitUntil: 'domcontentloaded' })
@@ -175,7 +176,8 @@ const browser = await chromium.launch({
   const payload = Buffer.from(JSON.stringify({ state: oauthState, accessToken: 'ya29.e2e-fake-token-not-real-0000000000', refreshToken: 'x', expiresIn: 3600, name: 'E2E Tester', email: 'e2e@example.com', photo: null })).toString('base64url')
   await page.goto('about:blank')
   await page.goto(`${BASE}/library?r=1#sonora-auth=${payload}`, { waitUntil: 'domcontentloaded' })
-  const signedInOk = await page.getByText('E2E Tester').first().waitFor({ timeout: 10_000 }).then(() => true).catch(() => false)
+  const signedInOk = await page.locator('text=E2E Tester >> visible=true').first().waitFor({ timeout: 10_000 }).then(() => true).catch(() => false)
+  await page.waitForTimeout(1000)
   const hashCleared = !(await page.evaluate(() => location.hash)).includes('sonora-auth')
   ok('returning from Google signs you in', signedInOk && hashCleared, `name shown: ${signedInOk}, token removed from URL: ${hashCleared}`)
   await shot(page, 'phone-10c-signed-in')
@@ -186,7 +188,7 @@ const browser = await chromium.launch({
   await page.goto('about:blank')
   await page.goto(`${BASE}/library?r=2#sonora-auth=${forged}`, { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(1500)
-  ok('forged sign-in is refused', !(await page.getByText('Mallory').first().isVisible().catch(() => false)))
+  ok('forged sign-in is refused', !(await page.locator('text=Mallory >> visible=true').count()) && !(await page.evaluate(() => localStorage.getItem('sonora-account'))))
   await page.unroute('https://accounts.google.com/**')
 
   // Other ways: the Google device code appears
