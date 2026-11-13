@@ -41,6 +41,7 @@ function load() {
   applyCookies()
   startTimer()
   finishGoogleRedirect()
+  window.addEventListener('hashchange', finishGoogleRedirect)
   $fetch<{ google: boolean }>('/api/auth/config').then((c) => { googleEnabled.value = c.google }).catch(() => {})
   window.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') ensureFresh() })
   window.addEventListener('storage', (e) => {
