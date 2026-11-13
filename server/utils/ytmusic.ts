@@ -38,9 +38,14 @@ export async function ytm(endpoint: string, body: J, opts: { gl?: string, hl?: s
       'referer': `${ORIGIN}/`,
       'x-youtube-client-name': '67',
       'x-youtube-client-version': CLIENT_VERSION,
+      // Signed in (see server/utils/auth.ts): your personal YouTube Music.
+      ...authHeaders(authStore.getStore(), ORIGIN),
     },
     body: JSON.stringify(payload),
   })
+  if (res.status === 401 || res.status === 403) {
+    if (authStore.getStore()) throw createError({ statusCode: 401, statusMessage: 'YouTube sign-in expired' })
+  }
   if (!res.ok) throw createError({ statusCode: 502, statusMessage: `YouTube Music HTTP ${res.status}` })
   return res.json()
 }
@@ -134,6 +139,33 @@ export async function collection(c: Pick<Collection, 'id' | 'isQueue'> & Partial
     artist: s.artist || fallbackArtist,
   }))
   return { title, subtitle, thumbnail, songs, sections }
+}
+
+// ------------------------------------------------------------------ signed in
+
+export interface AccountInfo { name: string | null, handle: string | null, photo: string | null }
+
+/** Name and photo of the signed-in account (call inside withAuth). */
+export async function accountInfo(): Promise<AccountInfo> {
+  const r = await ytm('account/account_menu', {})
+  const h = findFirstOf(r, ['activeAccountHeaderRenderer'])
+  if (!h) throw createError({ statusCode: 401, statusMessage: 'Not signed in' })
+  return {
+    name: text(h.accountName) || null,
+    handle: text(h.channelHandle) || text(h.email) || null,
+    photo: upscale(lastThumb(h.accountPhoto)) || null,
+  }
+}
+
+/** Playlists in your YouTube Music library (call inside withAuth). */
+export async function libraryPlaylists(): Promise<Collection[]> {
+  const r = await ytm('browse', { browseId: 'FEmusic_liked_playlists' })
+  const out = new Map<string, Collection>()
+  for (const [key, o] of findAllOf(r, ['musicTwoRowItemRenderer', 'musicResponsiveListItemRenderer'])) {
+    const c = key === 'musicTwoRowItemRenderer' ? parseTwoRow(o) : parseResponsive(o)
+    if (c && 'isQueue' in c && c.id.startsWith('VL') && c.id !== 'VLLM' && !out.has(c.id)) out.set(c.id, c)
+  }
+  return [...out.values()]
 }
 
 /** Plain lyrics from YouTube Music's "Lyrics" tab. */

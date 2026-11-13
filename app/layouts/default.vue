@@ -26,6 +26,7 @@ watch(player.nowPlayingOpen, (open) => { document.documentElement.style.overflow
     <AddToPlaylist />
     <NameDialog />
     <SleepTimer />
+    <SignInSheet />
     <Toast />
   </div>
 </template>

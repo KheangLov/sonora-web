@@ -151,3 +151,10 @@ input { font: inherit; color: inherit; }
   background: var(--surface-1); outline: none; font-size: 16px; transition: border-color .15s;
 }
 .input:focus { border-color: var(--accent); }
+
+.spinner {
+  display: inline-block; width: 24px; height: 24px; flex-shrink: 0; border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, .2); border-top-color: var(--accent); animation: sonora-spin .8s linear infinite;
+}
+@keyframes sonora-spin { to { transform: rotate(360deg); } }
+.btn:disabled { opacity: .45; pointer-events: none; }

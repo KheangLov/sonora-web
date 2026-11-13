@@ -7,11 +7,12 @@ const addToPlaylist = shallowRef<Song | null>(null)
 const queueOpen = ref(false)
 const lyricsOpen = ref(false)
 const sleepOpen = ref(false)
+const signInOpen = ref(false)
 const nameDialog = shallowRef<{ title: string, initial?: string, confirm: string, onConfirm: (name: string) => void } | null>(null)
 
 export function useUi() {
   return {
-    songMenu, addToPlaylist, queueOpen, lyricsOpen, sleepOpen, nameDialog,
+    songMenu, addToPlaylist, queueOpen, lyricsOpen, sleepOpen, signInOpen, nameDialog,
     openSongMenu: (song: Song, playlistId?: number) => { songMenu.value = { song, playlistId } },
   }
 }

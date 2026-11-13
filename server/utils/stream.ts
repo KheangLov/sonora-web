@@ -62,6 +62,29 @@ function innertubeAuthed(): Promise<Innertube> | null {
   return authed
 }
 
+/**
+ * Signed-in listeners (see server/utils/auth.ts): their YouTube sign-in is added to player
+ * requests, which gets past the datacenter "not a bot" check far more often.
+ */
+const SIGNED_CLIENTS: Client[] = ['TV', 'WEB_EMBEDDED', 'ANDROID_VR', 'IOS']
+let signedTube: Promise<Innertube> | null = null
+function innertubeSigned(): Promise<Innertube> {
+  signedTube ??= Innertube.create({
+    retrieve_player: true,
+    generate_session_locally: true,
+    cache: playerCache(),
+    fetch: (input: RequestInfo | URL, init?: RequestInit) => {
+      const auth = authStore.getStore()
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      if (!auth || !/\/youtubei\/v1\/(player|next)/.test(url)) return fetch(input, init)
+      const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined))
+      for (const [k, v] of Object.entries(authHeaders(auth, 'https://www.youtube.com'))) headers.set(k, v)
+      return fetch(input, { ...init, headers })
+    },
+  }).catch((e) => { signedTube = null; throw e })
+  return signedTube
+}
+
 /** Set when YouTube bot-checks this server; the browser uses its fallback player meanwhile. */
 let botCheckedUntil = 0
 export const isBotChecked = () => Date.now() < botCheckedUntil
@@ -90,6 +113,8 @@ export function resolveAudio(id: string, fresh = false): Promise<ResolvedAudio> 
 async function doResolve(id: string): Promise<ResolvedAudio> {
   const errors: string[] = []
   const attempts: [Promise<Innertube>, Client][] = []
+  const signed = authStore.getStore() ? innertubeSigned() : null
+  if (signed) for (const c of SIGNED_CLIENTS) attempts.push([signed, c])
   const withCookie = innertubeAuthed()
   if (withCookie) for (const c of COOKIE_CLIENTS) attempts.push([withCookie, c])
   if (!isBotChecked()) {
@@ -101,7 +126,7 @@ async function doResolve(id: string): Promise<ResolvedAudio> {
 
   for (const [ytP, client] of attempts) {
     // Once two clients say "confirm you're not a bot", the IP is flagged: fail fast.
-    if (botChecks >= 2) break
+    if (botChecks >= (signed ? 4 : 2)) break
     try {
       const yt = await ytP
       const info = await yt.getBasicInfo(id, { client })
@@ -140,7 +165,7 @@ async function doResolve(id: string): Promise<ResolvedAudio> {
         client,
         expiresAt: (Number(u.searchParams.get('expire')) || Date.now() / 1000 + 5 * 3600) * 1000,
       }
-      if (ytP !== withCookie) preferred = client
+      if (ytP !== withCookie && ytP !== signed) preferred = client
       cache.set(id, resolved)
       if (cache.size > 500) cache.delete(cache.keys().next().value!)
       return resolved

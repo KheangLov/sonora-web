@@ -3,6 +3,7 @@ const route = useRoute()
 const lib = useLibrary()
 const ui = useUi()
 const pwa = usePwaInstall()
+const acc = useAccount()
 const links = [
   { to: '/', label: 'Home', icon: 'home' },
   { to: '/search', label: 'Search', icon: 'search' },
@@ -43,6 +44,11 @@ function newPlaylist() {
         <span class="col grow"><span class="title ellipsis">{{ p.name }}</span><span class="small muted">{{ p.count }} songs</span></span>
       </NuxtLink>
     </div>
+    <NuxtLink v-if="acc.signedIn.value" to="/library" class="me row">
+      <Artwork :src="acc.account.value?.photo" :size="32" radius="50%" />
+      <span class="col grow min0"><span class="title ellipsis">{{ acc.account.value?.name ?? 'YouTube Music' }}</span><span class="small accent">Connected</span></span>
+    </NuxtLink>
+    <button v-else class="btn btn-outline install" @click="ui.signInOpen.value = true"><Icon name="account" :size="18" />Sign in</button>
     <button v-if="pwa.canInstall.value" class="btn btn-outline install" @click="pwa.install()"><Icon name="install" :size="18" />Install app</button>
   </aside>
 </template>
@@ -63,4 +69,7 @@ function newPlaylist() {
 .ph { padding: 12px 4px 4px 12px; }
 .sm { width: 32px; height: 32px; color: var(--muted); }
 .install { margin-top: 12px; justify-content: center; }
+.me { gap: 10px; margin-top: 12px; padding: 8px 12px; border-radius: 12px; background: var(--surface-2); }
+.me .title { font-size: 14px; }
+.min0 { min-width: 0; }
 </style>

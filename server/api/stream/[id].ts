@@ -1,3 +1,4 @@
+import type { H3Event } from 'h3'
 /**
  * Audio proxy with HTTP Range support. Answers every request with at most CHUNK bytes,
  * so the <audio> element streams in small 206 pieces: playback starts instantly,
@@ -6,7 +7,9 @@
 const CHUNK = 2 * 1024 * 1024
 const ID = /^[\w-]{11}$/
 
-export default defineEventHandler(async (event) => {
+export default defineEventHandler(event => authStore.run(getAuth(event), () => handle(event)))
+
+async function handle(event: H3Event) {
   const id = getRouterParam(event, 'id') ?? ''
   if (!ID.test(id)) throw createError({ statusCode: 400, statusMessage: 'Bad id' })
 
@@ -44,7 +47,7 @@ export default defineEventHandler(async (event) => {
     return new Response(null, { status: 206, headers })
   }
   return new Response(upstream.body, { status: 206, headers })
-})
+}
 
 function parseRange(h: string | undefined): { start: number, end: number | null } {
   const m = /^bytes=(\d*)-(\d*)$/.exec(h?.trim() ?? '')

@@ -29,6 +29,15 @@ C=$(j "/api/collection?id=RDCLAK5uy_kmPRjHDECIcuVwnKsx2Ng7fyNgFKWNJFs")
 CN=$(echo "$C" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{const j=JSON.parse(d);console.log(j.songs.length);console.error(j.title)}catch{console.log(0);console.error(d.slice(0,300))}})')
 check "collection ($CN songs)" "$([ "$CN" -gt 3 ] && echo ok)" "$C"
 
+# Sign-in: Google device code is issued; personal endpoints refuse anonymous calls; signed requests are never edge-cached
+D=$(curl -s --max-time 30 -X POST "$BASE/api/auth/device")
+check "sign-in device code: $(echo "$D" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{const j=JSON.parse(d);console.log(j.via+" "+j.userCode+" "+j.verificationUrl)}catch{console.log(d.slice(0,200))}})')" "$(echo "$D" | grep -q '"userCode":"' && echo ok)" "$D"
+ME=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/api/me"); check "anonymous /api/me is 401 ($ME)" "$([ "$ME" = "401" ] && echo ok)" ""
+CC=$(curl -s -D - -o /dev/null -H "Cookie: sonora_yt_token=ya29.not-a-real-token-xxxxxxxxxxxx" "$BASE/api/home?gl=KH&u=test" | grep -i '^cache-control' | tr -d '\r')
+check "signed-in home is private ($CC)" "$(echo "$CC" | grep -qi 'private' && echo ok)" "$CC"
+BAD=$(curl -s -o /dev/null -w "%{http_code}" -X POST -H 'content-type: application/json' -d '{"cookie":"SID=abc; SAPISID=fake"}' "$BASE/api/auth/cookie")
+check "bad cookie rejected ($BAD)" "$([ "$BAD" = "401" ] && echo ok)" ""
+
 for vid in "$ID" "kJQP7kiw5Fk" "dQw4w9WgXcQ"; do
   curl -s --max-time 60 -D /tmp/h.txt -o /tmp/a.bin -H "Range: bytes=0-262143" "$BASE/api/stream/$vid"
   SZ=$(stat -c %s /tmp/a.bin); ST=$(head -1 /tmp/h.txt | awk '{print $2}')

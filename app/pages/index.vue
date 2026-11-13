@@ -2,6 +2,7 @@
 import type { HomeSection, Song } from '#shared/types/music'
 
 const player = usePlayer()
+const acc = useAccount()
 const lib = useLibrary()
 const ui = useUi()
 
@@ -16,7 +17,7 @@ const MOODS = [
   { label: 'K-Pop', q: 'kpop hits' },
 ]
 
-const sections = shallowRef<HomeSection[] | null>(peek('home') ?? null)
+const sections = shallowRef<HomeSection[] | null>(peek(`home:${acc.key.value}`) ?? null)
 const error = ref(false)
 const refreshing = ref(false)
 const mood = ref<typeof MOODS[number] | null>(null)
@@ -51,6 +52,8 @@ async function pickMood(m: typeof MOODS[number] | null) {
 }
 
 onMounted(() => { load() })
+// Signing in or out swaps between the general and your personal YouTube Music home.
+watch(() => acc.version.value, () => { sections.value = null; load(true) })
 watch(() => lib.ready.value, (r) => { if (r) loadQuick() }, { immediate: true })
 
 const visibleSections = computed(() => sections.value ? filterSections(sections.value, lib.dislikedIds.value) : null)
@@ -60,7 +63,9 @@ const recent = computed(() => lib.history.value.slice(0, 6))
 
 const greeting = computed(() => {
   const h = new Date().getHours()
-  return h >= 5 && h < 12 ? 'Good morning' : h >= 12 && h < 18 ? 'Good afternoon' : 'Good evening'
+  const g = h >= 5 && h < 12 ? 'Good morning' : h >= 12 && h < 18 ? 'Good afternoon' : 'Good evening'
+  const first = acc.signedIn.value ? acc.account.value?.name?.split(' ')[0] : null
+  return first ? `${g}, ${first}` : g
 })
 </script>
 

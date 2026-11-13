@@ -144,6 +144,14 @@ const browser = await chromium.launch({
   await page.waitForTimeout(1200)
   await shot(page, 'phone-10-library')
 
+  // YouTube Music sign-in: the Google device code appears
+  await page.getByRole('button', { name: /Sign in with Google/ }).first().click().catch(() => {})
+  const code = await page.locator('.code span').first().waitFor({ timeout: 20_000 }).then(() => page.locator('.code span').first().textContent()).catch(() => null)
+  ok('sign-in shows a Google device code', !!code && code.length >= 6, code ?? '')
+  await page.waitForTimeout(500)
+  await shot(page, 'phone-10b-sign-in')
+  await page.keyboard.press('Escape')
+
   // Offline: the app shell + library still load from the service worker
   await page.goto(BASE + '/', { waitUntil: 'load' })
   await page.waitForTimeout(4000) // let the SW install + precache

@@ -2,6 +2,8 @@ import type { H3Event } from 'h3'
 
 /** Cache at Vercel's edge (s-maxage) and serve stale while refreshing in the background. */
 export function edgeCache(event: H3Event, seconds: number, swr = seconds * 4) {
+  // Personal (signed-in) responses must never be shared through the CDN.
+  if (event.context.private) return
   setResponseHeader(event, 'cache-control', `public, max-age=${Math.min(seconds, 300)}, s-maxage=${seconds}, stale-while-revalidate=${swr}`)
 }
 
