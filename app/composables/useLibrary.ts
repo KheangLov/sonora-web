@@ -106,8 +106,12 @@ export function useLibrary() {
     },
 
     ensure: (song: Song) => patch(song, {}),
-    setLiked: (song: Song, liked: boolean) =>
-      patch(song, liked ? { liked: true, likedAt: now(), disliked: false } : { liked: false }),
+    async setLiked(song: Song, liked: boolean) {
+      const rec = await patch(song, liked ? { liked: true, likedAt: now(), disliked: false } : { liked: false })
+      // "Download songs you like": every like is also saved for offline.
+      if (liked && usePrefs().value.autoDownloadLiked && !rec.downloaded) useDownloads().download(song)
+      return rec
+    },
     setDisliked: (song: Song, disliked: boolean) =>
       patch(song, disliked ? { disliked: true, dislikedAt: now(), liked: false } : { disliked: false, dislikedAt: 0 }),
     async restoreAllDisliked() {

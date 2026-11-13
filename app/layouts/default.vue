@@ -15,10 +15,12 @@ watch(player.nowPlayingOpen, (open) => { document.documentElement.style.overflow
       <slot />
     </main>
     <div class="dock mobile-only">
+      <InstallBanner />
       <MiniPlayer />
       <BottomNav />
     </div>
     <div class="desktop-only bar"><PlayerBar /></div>
+    <div class="desktop-only"><InstallBanner /></div>
 
     <NowPlaying />
     <QueueSheet />
@@ -27,6 +29,7 @@ watch(player.nowPlayingOpen, (open) => { document.documentElement.style.overflow
     <NameDialog />
     <SleepTimer />
     <SignInSheet />
+    <InstallSheet />
     <Toast />
   </div>
 </template>

@@ -70,7 +70,8 @@ export default defineNuxtConfig({
   typescript: { strict: true },
 
   pwa: {
-    registerType: 'autoUpdate',
+    // 'prompt': updates wait for a quiet moment (see plugins/pwa-ux.client.ts) so music never cuts out.
+    registerType: 'prompt',
     injectRegister: 'auto',
     manifest: {
       name: 'Sonora',
@@ -80,7 +81,11 @@ export default defineNuxtConfig({
       start_url: '/',
       scope: '/',
       display: 'standalone',
-      display_override: ['window-controls-overlay', 'standalone'],
+      display_override: ['standalone', 'minimal-ui'],
+      launch_handler: { client_mode: ['focus-existing', 'auto'] },
+      prefer_related_applications: false,
+      lang: 'en',
+      dir: 'ltr',
       orientation: 'any',
       background_color: '#09090B',
       theme_color: '#09090B',
@@ -89,6 +94,12 @@ export default defineNuxtConfig({
         { src: '/pwa-192.png', sizes: '192x192', type: 'image/png' },
         { src: '/pwa-512.png', sizes: '512x512', type: 'image/png' },
         { src: '/pwa-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+      ],
+      // Richer install dialog on Android / desktop Chrome
+      screenshots: [
+        { src: '/screenshots/phone-home.webp', sizes: '540x1100', type: 'image/webp', form_factor: 'narrow', label: 'Home: mixes, trending and Khmer hits' },
+        { src: '/screenshots/phone-search.webp', sizes: '540x1100', type: 'image/webp', form_factor: 'narrow', label: 'Search with live suggestions' },
+        { src: '/screenshots/desktop-home.webp', sizes: '1440x900', type: 'image/webp', form_factor: 'wide', label: 'Sonora on desktop' },
       ],
       shortcuts: [
         { name: 'Search', url: '/search', icons: [{ src: '/pwa-192.png', sizes: '192x192' }] },
@@ -100,10 +111,10 @@ export default defineNuxtConfig({
       navigateFallbackDenylist: [/^\/api\//],
       globPatterns: ['**/*.{js,css,html,svg,png,ico,webp,woff2}'],
       // (No 'json' here: the PWA module adds Nuxt's build-id JSON itself; listing it twice breaks SW install.)
-      globIgnores: ['**/og.png'],
+      globIgnores: ['**/og.png', '**/screenshots/**'],
       cleanupOutdatedCaches: true,
       clientsClaim: true,
-      skipWaiting: true,
+      skipWaiting: false,
       runtimeCaching: [
         {
           // Artwork: cache-first so your library looks right offline.

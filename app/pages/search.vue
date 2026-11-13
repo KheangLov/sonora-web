@@ -6,6 +6,7 @@ const router = useRouter()
 const player = usePlayer()
 const lib = useLibrary()
 const ui = useUi()
+const online = useOnline()
 
 const GENRES = [
   { label: 'Pop', q: 'pop hits', color: '#e8115b' },
@@ -71,6 +72,17 @@ async function run(q: string) {
   catch { status.value = 'error' }
 }
 
+/** Offline (or YouTube unreachable): search what you already have — downloads first. */
+const local = computed(() => {
+  const term = (submitted.value ?? '').toLowerCase().normalize('NFKC').trim()
+  if (!term) return []
+  const words = term.split(/\s+/)
+  return [...lib.songs.values()]
+    .filter(s => !s.disliked && words.every(w => `${s.title} ${s.artist} ${s.album ?? ''}`.toLowerCase().includes(w)))
+    .sort((a, b) => Number(!!b.downloaded) - Number(!!a.downloaded) || (b.lastPlayedAt ?? 0) - (a.lastPlayedAt ?? 0))
+    .slice(0, 50)
+})
+
 async function loadMore() {
   if (!next.value || loadingMore.value || moreFailed.value) return
   loadingMore.value = true
@@ -131,9 +143,17 @@ watch(() => route.query.q, (q) => { if (q && q !== submitted.value) run(String(q
     <!-- Results -->
     <template v-if="showResults">
       <template v-if="status === 'loading'"><SkeletonRow v-for="i in 10" :key="i" /></template>
-      <EmptyState v-else-if="status === 'error'" title="Search failed" message="Check your connection and try again.">
-        <button class="btn btn-primary" @click="run(query)">Retry</button>
-      </EmptyState>
+      <template v-else-if="status === 'error'">
+        <EmptyState
+          :icon="online ? 'refresh' : 'offline'"
+          :title="online ? 'Search failed' : 'You\'re offline'"
+          :message="local.length ? 'Here\'s what matches in your library.' : 'Search needs a connection. Your downloads still play.'"
+        >
+          <button class="btn btn-primary" @click="run(query)">Retry</button>
+          <NuxtLink v-if="!local.length" to="/collection/downloads" class="btn btn-outline">Downloads</NuxtLink>
+        </EmptyState>
+        <SongRow v-for="s in local" :key="s.id" :song="s" @play="player.play(local, local.indexOf(s))" @more="ui.openSongMenu(s)" />
+      </template>
       <EmptyState v-else-if="status === 'blocked'" icon="block" title="This search is blocked" message="Thai / Thailand content is filtered out of Sonora." />
       <template v-else-if="visible">
         <button v-if="hint" class="pad hint body" :disabled="!hint.clickable" @click="run(hint.q)">

@@ -3,6 +3,8 @@ import type { HomeSection, Song } from '#shared/types/music'
 
 const player = usePlayer()
 const acc = useAccount()
+const online = useOnline()
+const pwa = usePwaInstall()
 const lib = useLibrary()
 const ui = useUi()
 
@@ -60,6 +62,7 @@ const visibleSections = computed(() => sections.value ? filterSections(sections.
 const visibleQuick = computed(() => quick.value ? lib.visible(quick.value.songs).slice(0, 20) : [])
 const visibleMood = computed(() => moodSongs.value ? lib.visible(moodSongs.value) : null)
 const recent = computed(() => lib.history.value.slice(0, 6))
+const offlineSongs = computed(() => lib.downloads.value.filter(s => !s.disliked))
 
 const greeting = computed(() => {
   const h = new Date().getHours()
@@ -77,6 +80,7 @@ const greeting = computed(() => {
         <h1 class="h1">{{ greeting }}</h1>
         <span class="body muted">What's the vibe today?</span>
       </div>
+      <button v-if="pwa.canInstall.value" class="icon-btn install-btn" aria-label="Install app" @click="pwa.install()"><Icon name="install" /></button>
       <button class="icon-btn" aria-label="Refresh" :class="{ spin: refreshing }" @click="load(true)"><Icon name="refresh" /></button>
       <NuxtLink to="/collection/history" class="icon-btn" aria-label="History"><Icon name="history" /></NuxtLink>
     </header>
@@ -85,6 +89,25 @@ const greeting = computed(() => {
       <button class="chip" :class="{ on: !mood }" @click="pickMood(null)">For you</button>
       <button v-for="m in MOODS" :key="m.label" class="chip" :class="{ on: mood?.label === m.label }" @click="pickMood(m)">{{ m.label }}</button>
     </div>
+
+    <!-- Offline: what you can play right now -->
+    <template v-if="!online">
+      <SectionHeader title="Available offline" :subtitle="offlineSongs.length ? `${offlineSongs.length} downloaded songs` : 'You\'re offline'" />
+      <EmptyState
+        v-if="!offlineSongs.length"
+        icon="offline"
+        title="No downloads yet"
+        message="When you're back online, tap ⋮ → Download on any song, or turn on “Download songs you like” in Library."
+      />
+      <template v-else>
+        <div class="pad row gap-12 offline-actions">
+          <button class="btn btn-primary" @click="player.play(offlineSongs)"><Icon name="play" :size="18" />Play all</button>
+          <button class="btn btn-outline" @click="player.play(offlineSongs, 0, true)"><Icon name="shuffle" :size="18" />Shuffle</button>
+        </div>
+        <SongRow v-for="(s, i) in offlineSongs.slice(0, 30)" :key="`off-${s.id}`" :song="s" @play="player.play(offlineSongs, i)" @more="ui.openSongMenu(s)" />
+        <NuxtLink v-if="offlineSongs.length > 30" to="/collection/downloads" class="pad btn btn-text">See all downloads</NuxtLink>
+      </template>
+    </template>
 
     <template v-if="mood">
       <SectionHeader :title="mood.label" subtitle="Mood" />
@@ -162,6 +185,8 @@ const greeting = computed(() => {
 .tile:hover { background: var(--surface-4); }
 .tile .title { font-size: 13px; line-height: 1.25; }
 .eq { margin-right: 4px; }
+.offline-actions { padding-bottom: 8px; }
+.install-btn { color: var(--accent); }
 .quick { gap: 0; }
 .qcol { width: min(86vw, 380px); }
 .qrow { padding-left: 0; padding-right: 8px; }

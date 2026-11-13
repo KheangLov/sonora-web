@@ -140,9 +140,26 @@ const browser = await chromium.launch({
   ok('disliked song listed in Library → Disliked', inList, dislikedTitle ?? '')
   await shot(page, 'phone-9-disliked')
 
+  // Install: the button on Home opens the install sheet (no native prompt in automated Chrome)
+  await page.goto(BASE + '/', { waitUntil: 'domcontentloaded' })
+  const installBtn = page.locator('[aria-label="Install app"]:visible').first()
+  const hasInstall = await installBtn.waitFor({ timeout: 8000 }).then(() => true).catch(() => false)
+  ok('Install button on Home', hasInstall)
+  if (hasInstall) {
+    await installBtn.click()
+    const sheet = await page.getByText('Install Sonora').first().waitFor({ timeout: 5000 }).then(() => true).catch(() => false)
+    ok('install sheet opens', sheet)
+    await page.waitForTimeout(600)
+    await shot(page, 'phone-9b-install-sheet')
+    await page.keyboard.press('Escape')
+  }
+
   await page.goto(BASE + '/library', { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(1200)
   await shot(page, 'phone-10-library')
+  await page.getByText('App & offline').first().scrollIntoViewIfNeeded().catch(() => {})
+  await page.waitForTimeout(400)
+  await shot(page, 'phone-10a-library-app')
 
   // YouTube Music sign-in: the Google device code appears
   await page.getByRole('button', { name: /Sign in with Google/ }).first().click().catch(() => {})
@@ -159,6 +176,13 @@ const browser = await chromium.launch({
   const swReady = await page.evaluate(() => navigator.serviceWorker?.controller ? 'controlled' : navigator.serviceWorker?.ready.then(() => 'ready').catch(e => String(e)))
   const offlineOk = await page.reload({ waitUntil: 'domcontentloaded' }).then(() => page.locator('h1').first().waitFor({ timeout: 10_000 })).then(() => true).catch(() => false)
   ok('opens offline (service worker)', offlineOk, `sw: ${swReady}`)
+  const offlineHome = await page.getByText('Available offline').first().waitFor({ timeout: 8000 }).then(() => true).catch(() => false)
+  ok('offline home shows "Available offline"', offlineHome)
+  await shot(page, 'phone-11a-offline-home')
+  await page.goto(BASE + '/search?q=perfect', { waitUntil: 'domcontentloaded' }).catch(() => {})
+  const offlineSearch = await page.getByText(/You're offline|matches in your library/).first().waitFor({ timeout: 10_000 }).then(() => true).catch(() => false)
+  ok('offline search falls back to your library', offlineSearch)
+  await shot(page, 'phone-11c-offline-search')
   await page.goto(BASE + '/library', { waitUntil: 'domcontentloaded' }).catch(() => {})
   await page.waitForTimeout(1500)
   await shot(page, 'phone-11-offline-library')
@@ -177,6 +201,14 @@ const browser = await chromium.launch({
   await page.locator('.card').first().waitFor({ timeout: 30_000 }).catch(() => {})
   await page.waitForTimeout(1500)
   await shot(page, 'desktop-1-home')
+  // Chrome's own verdict: is Sonora installable as an app?
+  await page.evaluate(() => navigator.serviceWorker?.ready).catch(() => {})
+  await page.waitForTimeout(1500)
+  const cdp = await ctx.newCDPSession(page)
+  const inst = await cdp.send('Page.getInstallabilityErrors').catch(e => ({ installabilityErrors: [{ errorId: String(e) }] }))
+  const man = await cdp.send('Page.getAppManifest').catch(() => ({ errors: [{ message: 'no manifest' }] }))
+  const errs = [...(inst.installabilityErrors ?? []).map(e => e.errorId), ...(man.errors ?? []).filter(e => e.critical).map(e => e.message)]
+  ok('Chrome says Sonora is installable', errs.length === 0, errs.join(', ') || `manifest ok (${man.errors?.length ?? 0} warnings: ${(man.errors ?? []).map(e => e.message).join(' | ').slice(0, 200)})`)
   await page.locator('.card').first().click()
   const playing = await waitFor(async () => { const s = await state(page); return s && s.playing && s.pos > 1 ? s : null }, 45_000)
   playCheck('desktop: play from home card', !!playing, playing?.engine ?? '')

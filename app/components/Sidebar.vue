@@ -49,7 +49,7 @@ function newPlaylist() {
       <span class="col grow min0"><span class="title ellipsis">{{ acc.account.value?.name ?? 'YouTube Music' }}</span><span class="small accent">Connected</span></span>
     </NuxtLink>
     <button v-else class="btn btn-outline install" @click="ui.signInOpen.value = true"><Icon name="account" :size="18" />Sign in</button>
-    <button v-if="pwa.canInstall.value" class="btn btn-outline install" @click="pwa.install()"><Icon name="install" :size="18" />Install app</button>
+    <button v-if="pwa.canInstall.value" class="btn btn-primary install" @click="pwa.install()"><Icon name="install" :size="18" />Install app</button>
   </aside>
 </template>
 
