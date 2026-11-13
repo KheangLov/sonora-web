@@ -106,7 +106,7 @@ const browser = await chromium.launch({
   await page.locator('.mini').first().click({ position: { x: 140, y: 24 } }).catch(() => page.evaluate(() => { window.__sonora.nowPlayingOpen.value = true }))
   await page.waitForTimeout(1500)
   await shot(page, 'phone-7-now-playing')
-  const lyricsBtn = page.locator('[aria-label="Lyrics"]').first()
+  const lyricsBtn = page.locator('[aria-label="Lyrics"]:visible').first()
   if (await lyricsBtn.isVisible().catch(() => false)) {
     await lyricsBtn.click()
     const hasLyrics = await waitFor(async () => (await page.locator('.lyr .line').count()) > 3, 15_000)
@@ -124,17 +124,17 @@ const browser = await chromium.launch({
 
   // Next track
   const firstTitle = (await state(page))?.title
-  await page.locator('[aria-label="Next"]').first().click().catch(() => page.evaluate(() => window.__sonora.next()))
+  await page.locator('[aria-label="Next"]:visible').first().click().catch(() => page.evaluate(() => window.__sonora.next()))
   const nextOk = await waitFor(async () => { const s = await state(page); return s && s.title !== firstTitle && s.playing && s.pos > 1 ? s : null }, 40_000)
   playCheck('next track plays', !!nextOk, nextOk ? `${nextOk.title} (${nextOk.engine})` : '')
 
   // Dislike current → skipped, listed in Library
   const dislikedTitle = (await state(page))?.title
-  await page.locator('[aria-label="Dislike"]').first().click().catch(() => {})
+  await page.locator('[aria-label="Dislike"]:visible').first().click().catch(() => {})
   const skipped = await waitFor(async () => { const s = await state(page); return s && s.title !== dislikedTitle ? s : null }, 15_000)
   ok('dislike skips the song', !!skipped)
   await page.keyboard.press('Escape')
-  await page.locator('[aria-label="Close player"]').first().click().catch(() => {})
+  await page.locator('[aria-label="Close player"]:visible').first().click().catch(() => {})
   await page.goto(BASE + '/collection/disliked', { waitUntil: 'domcontentloaded' })
   const inList = await page.getByText(dislikedTitle ?? '___', { exact: false }).first().waitFor({ timeout: 10_000 }).then(() => true).catch(() => false)
   ok('disliked song listed in Library → Disliked', inList, dislikedTitle ?? '')
