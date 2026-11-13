@@ -1,6 +1,8 @@
 // Diagnostic: does a BotGuard PO token get past "confirm you're not a bot" on a flagged datacenter IP?
 import { Innertube, Platform, UniversalCache, Constants } from 'youtubei.js'
-import { BotGuardClient, WebPoMinter, buildURL, GOOG_API_KEY, USER_AGENT } from 'bgutils-js/botguard'
+import { BotGuardClient } from 'bgutils-js/botguard'
+import { WebPoMinter } from 'bgutils-js/webpo'
+import { buildURL, GOOG_API_KEY, USER_AGENT } from 'bgutils-js/utils'
 import { JSDOM } from 'jsdom'
 
 Platform.shim.eval = (data, env) => {
