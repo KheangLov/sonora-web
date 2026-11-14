@@ -32,6 +32,9 @@ check "collection ($CN songs)" "$([ "$CN" -gt 3 ] && echo ok)" "$C"
 # Sign-in: Google device code is issued; personal endpoints refuse anonymous calls; signed requests are never edge-cached
 D=$(curl -s --max-time 30 -X POST "$BASE/api/auth/device")
 check "sign-in device code: $(echo "$D" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{const j=JSON.parse(d);console.log(j.via+" "+j.userCode+" "+j.verificationUrl)}catch{console.log(d.slice(0,200))}})')" "$(echo "$D" | grep -q '"userCode":"' && echo ok)" "$D"
+# …and Google accepts our poll for it: "pending" until someone approves (anything else means sign-in can't finish)
+P=$(curl -s --max-time 30 -X POST "$BASE/api/auth/token" -H 'content-type: application/json' -d "$(echo "$D" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const j=JSON.parse(d);console.log(JSON.stringify({via:j.via,deviceCode:j.deviceCode}))})')")
+check "sign-in code poll accepted by Google: $P" "$(echo "$P" | grep -qE '"status":"(pending|slow_down)"' && echo ok)" "$P"
 ME=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/api/me"); check "anonymous /api/me is 401 ($ME)" "$([ "$ME" = "401" ] && echo ok)" ""
 CC=$(curl -s -D - -o /dev/null -H "Cookie: sonora_yt_token=ya29.not-a-real-token-xxxxxxxxxxxx" "$BASE/api/home?gl=KH&u=test" | grep -i '^cache-control' | tr -d '\r')
 check "signed-in home is private ($CC)" "$(echo "$CC" | grep -qi 'private' && echo ok)" "$CC"

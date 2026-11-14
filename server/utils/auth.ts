@@ -158,9 +158,16 @@ export async function exchangeToken(via: OAuthVia, grant: { deviceCode: string }
   const c = await oauthClient(via)
   const body: Record<string, string> = { client_id: c.id, client_secret: c.secret }
   if ('deviceCode' in grant) {
-    body.code = grant.deviceCode
-    body.device_code = grant.deviceCode
-    body.grant_type = c.via === 'google' ? 'urn:ietf:params:oauth:grant-type:device_code' : 'http://oauth.net/grant_type/device/1.0'
+    // Each grant type takes exactly one name for the code: Google rejects the request
+    // ("Parameter not allowed for this message type: device_code") when both are sent.
+    if (c.via === 'google') {
+      body.device_code = grant.deviceCode
+      body.grant_type = 'urn:ietf:params:oauth:grant-type:device_code'
+    }
+    else {
+      body.code = grant.deviceCode
+      body.grant_type = 'http://oauth.net/grant_type/device/1.0'
+    }
   }
   else {
     body.refresh_token = grant.refreshToken

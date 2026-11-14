@@ -43,11 +43,19 @@ function load() {
   window.addEventListener('hashchange', () => finishGoogleRedirect())
   $fetch<{ google: boolean }>('/api/auth/config').then((c) => { googleEnabled.value = c.google }).catch(() => {})
   // Coming back to the app (e.g. from Google in another window): refresh, or pick up a sign-in made there.
-  const wake = () => { if (account.value && !account.value.expired) ensureFresh(); else restoreSession() }
+  const wake = () => {
+    pollNow()
+    if (account.value && !account.value.expired) ensureFresh()
+    else restoreSession()
+  }
   window.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') wake() })
   window.addEventListener('focus', wake)
   window.addEventListener('pageshow', (e) => { if ((e as PageTransitionEvent).persisted) wake() })
-  if (!account.value || account.value.expired) restoreSession()
+  if (!account.value || account.value.expired) {
+    restoreSession()
+    // Defer: the device-login helpers are defined below and need the app to be up.
+    setTimeout(resumePendingDeviceLogin, 0)
+  }
   window.addEventListener('storage', (e) => {
     if (e.key !== KEY) return
     try { account.value = JSON.parse(e.newValue ?? 'null') } catch { account.value = null }
@@ -252,53 +260,121 @@ export interface DeviceLogin {
   error: string
 }
 
+/**
+ * The code sign-in, built for phones: you leave Sonora for google.com/device, and the browser may
+ * freeze or even discard this tab meanwhile. So the pending code is kept in localStorage (resumed
+ * after a reload), we check again the moment you come back, and it keeps waiting in the background
+ * once you've gone to Google, even if you closed the sheet. Tokens from this sign-in don't expire
+ * after 7 days, and the server also remembers them in an HttpOnly cookie.
+ */
+interface Pending { via: 'google' | 'tv', deviceCode: string, userCode: string, url: string, until: number, every: number }
+const PENDING_KEY = 'sonora-device-login'
+
 let pollTimer: ReturnType<typeof setTimeout> | null = null
+let pending: Pending | null = null
+let deviceState: DeviceLogin | null = null
+let polling = false
+
+function savePending(p: Pending | null) {
+  pending = p
+  try {
+    if (p) localStorage.setItem(PENDING_KEY, JSON.stringify(p))
+    else localStorage.removeItem(PENDING_KEY)
+  }
+  catch {}
+}
+function readPending(): Pending | null {
+  try {
+    const p = JSON.parse(localStorage.getItem(PENDING_KEY) ?? 'null') as Pending | null
+    return p && p.deviceCode && p.until > Date.now() + 15_000 ? p : null
+  }
+  catch { return null }
+}
 
 function cancelDeviceLogin() {
   if (pollTimer) clearTimeout(pollTimer)
   pollTimer = null
+  savePending(null)
+  deviceState = null
 }
 
-function startDeviceLogin(): DeviceLogin {
-  cancelDeviceLogin()
+function fail(state: DeviceLogin, msg: string) {
+  state.phase = 'error'
+  state.error = msg
+  if (pollTimer) clearTimeout(pollTimer)
+  pollTimer = null
+  savePending(null)
+}
+
+async function pollOnce() {
+  const p = pending
+  const state = deviceState
+  if (!p || !state || state.phase !== 'code' || polling) return
+  if (Date.now() > p.until) return fail(state, 'The code expired. Get a new one.')
+  polling = true
+  if (pollTimer) clearTimeout(pollTimer)
+  pollTimer = null
+  try {
+    const r = await $fetch<{ status: string, accessToken?: string, refreshToken?: string, expiresIn?: number, message?: string }>(
+      '/api/auth/token', { method: 'POST', body: { via: p.via, deviceCode: p.deviceCode } },
+    )
+    if (r.status === 'ok' && r.accessToken) {
+      state.phase = 'done'
+      savePending(null)
+      await signedIn({ via: p.via, accessToken: r.accessToken, refreshToken: r.refreshToken, expiresAt: Date.now() + (r.expiresIn ?? 3600) * 1000 })
+      return
+    }
+    if (r.status === 'slow_down') savePending({ ...p, every: p.every + 2000 })
+    else if (r.status === 'denied') return fail(state, 'Sign-in was cancelled on Google\'s page.')
+    else if (r.status === 'expired') return fail(state, 'The code expired. Get a new one.')
+    else if (r.status === 'error') return fail(state, r.message || 'Google refused the sign-in.')
+  }
+  catch {} // offline or a hiccup: just try again
+  finally { polling = false }
+  if (pending && deviceState?.phase === 'code') pollTimer = setTimeout(pollOnce, pending.every)
+}
+
+/** Back from Google's page: check right away instead of waiting for the next poll. */
+function pollNow() {
+  if (pending && deviceState?.phase === 'code') pollOnce()
+}
+
+/** Show the code sign-in. Resumes a code that's still pending (e.g. after this tab was reloaded). */
+function startDeviceLogin(fresh = false): DeviceLogin {
+  if (!fresh && deviceState && (deviceState.phase === 'code' || deviceState.phase === 'starting')) return deviceState
+  if (pollTimer) clearTimeout(pollTimer)
+  pollTimer = null
   const state = reactive<DeviceLogin>({ phase: 'starting', userCode: '', url: '', error: '' })
+  deviceState = state
+  const resume = fresh ? null : readPending()
+  if (resume) {
+    pending = resume
+    Object.assign(state, { phase: 'code', userCode: resume.userCode, url: resume.url })
+    pollOnce()
+    return state
+  }
+  savePending(null)
   ;(async () => {
     try {
       const d = await $fetch<{ via: 'google' | 'tv', deviceCode: string, userCode: string, verificationUrl: string, interval: number, expiresIn: number }>(
         '/api/auth/device', { method: 'POST' },
       )
-      state.userCode = d.userCode
-      state.url = d.verificationUrl
-      state.phase = 'code'
-      const until = Date.now() + d.expiresIn * 1000
-      let every = Math.max(3, d.interval) * 1000
-      const poll = async () => {
-        if (Date.now() > until) { state.phase = 'error'; state.error = 'The code expired. Get a new one.'; return }
-        try {
-          const r = await $fetch<{ status: string, accessToken?: string, refreshToken?: string, expiresIn?: number, message?: string }>(
-            '/api/auth/token', { method: 'POST', body: { via: d.via, deviceCode: d.deviceCode } },
-          )
-          if (r.status === 'ok' && r.accessToken) {
-            state.phase = 'done'
-            await signedIn({ via: d.via, accessToken: r.accessToken, refreshToken: r.refreshToken, expiresAt: Date.now() + (r.expiresIn ?? 3600) * 1000 })
-            return
-          }
-          if (r.status === 'slow_down') every += 2000
-          else if (r.status === 'denied') { state.phase = 'error'; state.error = 'Sign-in was cancelled on Google\'s page.'; return }
-          else if (r.status === 'expired') { state.phase = 'error'; state.error = 'The code expired. Get a new one.'; return }
-          else if (r.status === 'error') { state.phase = 'error'; state.error = r.message || 'Google refused the sign-in.'; return }
-        }
-        catch {}
-        pollTimer = setTimeout(poll, every)
-      }
-      pollTimer = setTimeout(poll, every)
+      if (deviceState !== state) return
+      savePending({ via: d.via, deviceCode: d.deviceCode, userCode: d.userCode, url: d.verificationUrl, until: Date.now() + d.expiresIn * 1000, every: Math.max(3, d.interval) * 1000 })
+      Object.assign(state, { phase: 'code', userCode: d.userCode, url: d.verificationUrl })
+      pollTimer = setTimeout(pollOnce, pending!.every)
     }
     catch (e: any) {
-      state.phase = 'error'
-      state.error = e?.data?.statusMessage ?? e?.statusMessage ?? 'Couldn\'t start Google sign-in. Check your connection.'
+      fail(state, e?.data?.statusMessage ?? e?.statusMessage ?? 'Couldn\'t start Google sign-in. Check your connection.')
     }
   })()
   return state
+}
+
+/** After a reload: keep waiting for a code you were approving on Google's page. */
+function resumePendingDeviceLogin() {
+  if (account.value && !account.value.expired) { savePending(null); return }
+  if (readPending()) startDeviceLogin()
 }
 
 // ------------------------------------------------------------------ cookie sign-in (the Android app's way)
@@ -341,6 +417,7 @@ export function useAccount() {
     startGoogleSignIn,
     startDeviceLogin,
     cancelDeviceLogin,
+    pollNow,
     signInWithCookie,
     finishGoogleRedirect,
     signOut,
