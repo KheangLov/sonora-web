@@ -10,6 +10,7 @@ The web version of [Sonora](https://github.com/KheangLov/sonora): a fast, free, 
 - **Dislike:** hides a song everywhere. Library → Disliked songs lets you undo one or restore all.
 - **Content filter:** Thai / Thailand content is blocked in search, suggestions, the home feed, radio and collections (`shared/utils/contentFilter.ts`).
 - **Offline:** the app shell is precached, so it opens without a connection. Downloaded songs, artwork, lyrics and recent feeds are cached.
+- **Equalizer (Poweramp-style):** preamp + 10-band EQ (31 Hz–16 kHz, ±15 dB), live spectrum under the response curve, 16 presets plus your own, bass & treble, limiter. An Effects tab adds balance, stereo expand, mono, tempo (pitch kept) and volume. Built on Web Audio; the same presets as the Android app. It applies to Sonora's own stream and downloads. The YouTube fallback player is a cross-origin iframe, so only tempo reaches it.
 - Lock-screen and headset controls through the Media Session API
 - Phone layout with a mini player and bottom nav; desktop layout with a sidebar, player bar and lyrics side panel
 
@@ -34,6 +35,8 @@ Optional: set `YT_COOKIE` (the cookie of a spare Google account) in Vercel. Sign
   5. In Vercel → Settings → Environment Variables, add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, then redeploy.
 - **Other ways:** enter a code at google.com/device (works with no setup), or paste a YouTube cookie.
 - Sign-ins stay in the browser. The server stores nothing, and signed-in responses are never cached at the CDN.
+- **Staying signed in on phones:** besides localStorage, the refresh token is kept in an HttpOnly cookie that only `/api/auth` can see (`sonora_rt`, 400 days, renewed on every refresh). Server-set cookies aren't wiped by Safari's 7-day storage limit. They also let an installed app pick up a sign-in that finished in the browser tab. Only a real revocation (`invalid_grant`) signs you out. Network or Google hiccups don't.
+- **Important:** if your OAuth app's Audience is still **Testing**, Google expires every refresh token after **7 days**, whatever the app does. For a permanent sign-in, go to Google Auth Platform → Audience → **Publish app**. You don't need verification for personal use: Google shows an "unverified app" warning once, and you tap Advanced → Continue.
 
 ## Develop
 ```bash

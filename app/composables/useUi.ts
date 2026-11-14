@@ -9,15 +9,20 @@ const lyricsOpen = ref(false)
 const sleepOpen = ref(false)
 const signInOpen = ref(false)
 const signInOther = ref(false)
-const nameDialog = shallowRef<{ title: string, initial?: string, confirm: string, onConfirm: (name: string) => void } | null>(null)
+const eqOpen = ref(false)
+const nameDialog = shallowRef<{ title: string, initial?: string, placeholder?: string, confirm: string, onConfirm: (name: string) => void } | null>(null)
 
 export function useUi() {
   return {
-    songMenu, addToPlaylist, queueOpen, lyricsOpen, sleepOpen, signInOpen, signInOther, nameDialog,
+    songMenu, addToPlaylist, queueOpen, lyricsOpen, sleepOpen, signInOpen, signInOther, nameDialog, eqOpen,
     /** One tap: straight to Google when it's set up, otherwise the sign-in sheet. */
     signIn(other = false) {
       const acc = useAccount()
-      if (!other && acc.googleEnabled.value) return acc.startGoogleSignIn()
+      // An installed app on iPhone/iPad finishes Google redirects in Safari, which has separate storage.
+      // There, show the sheet so the code sign-in (which finishes right here) is one tap away.
+      const iosApp = (navigator as any).standalone === true
+      if (!other && acc.googleEnabled.value && !iosApp) return acc.startGoogleSignIn()
+      if (iosApp) other = true
       signInOther.value = other
       signInOpen.value = true
     },

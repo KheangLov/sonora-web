@@ -7,6 +7,8 @@ const player = usePlayer()
 const lib = useLibrary()
 const dl = useDownloads()
 const ui = useUi()
+const audioFx = useAudioFx()
+const fxOn = computed(() => fxActive(audioFx.settings.value) || audioFx.settings.value.tempo !== 1)
 const toast = useToast()
 
 const song = computed(() => player.current.value)
@@ -165,6 +167,7 @@ onMounted(() => window.addEventListener('popstate', () => { if (player.nowPlayin
               <Icon name="lyrics" />
             </button>
             <button class="icon-btn" :class="{ active: !!player.sleepAt.value }" aria-label="Sleep timer" @click="ui.sleepOpen.value = true"><Icon name="bedtime" /></button>
+            <button class="icon-btn" :class="{ active: fxOn }" aria-label="Equalizer" @click="ui.eqOpen.value = true"><Icon name="graphicEq" /></button>
             <button class="icon-btn" aria-label="Share" @click="shareSong(song)"><Icon name="share" /></button>
             <button class="icon-btn only-mobile" aria-label="Queue" @click="ui.queueOpen.value = true"><Icon name="queue" /></button>
           </div>

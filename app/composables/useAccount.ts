@@ -42,7 +42,12 @@ function load() {
   startTimer()
   window.addEventListener('hashchange', () => finishGoogleRedirect())
   $fetch<{ google: boolean }>('/api/auth/config').then((c) => { googleEnabled.value = c.google }).catch(() => {})
-  window.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') ensureFresh() })
+  // Coming back to the app (e.g. from Google in another window): refresh, or pick up a sign-in made there.
+  const wake = () => { if (account.value && !account.value.expired) ensureFresh(); else restoreSession() }
+  window.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') wake() })
+  window.addEventListener('focus', wake)
+  window.addEventListener('pageshow', (e) => { if ((e as PageTransitionEvent).persisted) wake() })
+  if (!account.value || account.value.expired) restoreSession()
   window.addEventListener('storage', (e) => {
     if (e.key !== KEY) return
     try { account.value = JSON.parse(e.newValue ?? 'null') } catch { account.value = null }
@@ -101,11 +106,11 @@ async function ensureFresh(): Promise<boolean> {
   if (!a || a.expired) return false
   if (a.via === 'cookie') return true
   if (a.accessToken && (a.expiresAt ?? 0) - Date.now() > 5 * 60_000) return true
-  if (!a.refreshToken) return false
   refreshing ??= (async () => {
     try {
+      // No refresh token here (e.g. a restored session)? The server uses the remembered-session cookie.
       const r = await $fetch<{ status: string, accessToken?: string, expiresIn?: number }>('/api/auth/token', {
-        method: 'POST', body: { via: a.via, refreshToken: a.refreshToken },
+        method: 'POST', body: { via: a.via, ...(a.refreshToken ? { refreshToken: a.refreshToken } : {}) },
       })
       if (r.status === 'ok' && r.accessToken) {
         account.value = { ...a, accessToken: r.accessToken, expiresAt: Date.now() + (r.expiresIn ?? 3600) * 1000 }
@@ -113,7 +118,9 @@ async function ensureFresh(): Promise<boolean> {
         applyCookies()
         return true
       }
-      // The refresh token was revoked or expired.
+      if (r.status !== 'revoked') return (a.expiresAt ?? 0) > Date.now() // a hiccup at Google: try again later
+      // The refresh token is really dead. Maybe a newer sign-in is remembered in this browser.
+      if (a.refreshToken && hasRememberedSession() && await restoreSession(true)) return true
       account.value = { ...a, accessToken: undefined, expired: true }
       save()
       applyCookies()
@@ -121,10 +128,46 @@ async function ensureFresh(): Promise<boolean> {
       changed()
       return false
     }
-    catch { return !!a.accessToken } // offline: keep what we have
+    catch { return (a.expiresAt ?? 0) > Date.now() } // offline or server error: keep what we have, retry later
     finally { refreshing = null }
   })()
   return refreshing
+}
+
+function hasRememberedSession() {
+  return /(?:^|;\s*)sonora_signed=/.test(document.cookie)
+}
+
+let restoring: Promise<boolean> | null = null
+/**
+ * Pick up a sign-in remembered by the server cookie: after the phone wiped this site's storage,
+ * or when the Google redirect finished in another window (e.g. the browser instead of the installed app).
+ */
+function restoreSession(force = false): Promise<boolean> {
+  if (!hasRememberedSession()) return Promise.resolve(false)
+  if (!force && account.value && !account.value.expired) return Promise.resolve(true)
+  restoring ??= (async () => {
+    try {
+      const r = await $fetch<{ status: string, via: SignInVia, accessToken: string, expiresIn: number }>('/api/auth/session', { method: 'POST' })
+      if (r.status !== 'ok') return false
+      const prev = account.value
+      const same = prev && prev.via === r.via
+      account.value = {
+        via: r.via,
+        accessToken: r.accessToken,
+        expiresAt: Date.now() + (r.expiresIn || 3600) * 1000,
+        name: prev && same ? prev.name : null, handle: prev && same ? prev.handle : null, photo: prev && same ? prev.photo : null,
+      }
+      save()
+      applyCookies()
+      if (!account.value.name) await fetchProfile()
+      await changed()
+      return true
+    }
+    catch { return false }
+    finally { restoring = null }
+  })()
+  return restoring
 }
 
 async function fetchProfile() {
@@ -180,7 +223,16 @@ function finishGoogleRedirect(router?: ReturnType<typeof useRouter>) {
   try { data = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(m[1]!.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)))) } catch { return }
   const expected = localStorage.getItem(STATE_KEY)
   localStorage.removeItem(STATE_KEY)
-  if (!expected || data.state !== expected) { useToast().show('Sign-in was interrupted. Please try again.'); return }
+  if (!expected || data.state !== expected) {
+    // This window didn't start the sign-in (another tab, or the browser instead of the installed app),
+    // or its storage was cleared on the way. The server checked the sign-in and remembered it: use that.
+    // The tokens in the address bar are never trusted on their own here.
+    restoreSession(true).then((ok) => {
+      if (ok) useToast().show(account.value?.name ? `Signed in as ${account.value.name}` : 'Signed in to YouTube Music')
+      else useToast().show(data.error || 'Sign-in was interrupted. Please try again.')
+    })
+    return
+  }
   if (data.error || !data.accessToken) { useToast().show(data.error || 'Google sign-in failed'); return }
   signedIn({
     via: 'web',
@@ -260,6 +312,7 @@ async function signInWithCookie(raw: string) {
 
 async function signOut() {
   cancelDeviceLogin()
+  await $fetch('/api/auth/signout', { method: 'POST' }).catch(() => {})
   account.value = null
   save()
   applyCookies()

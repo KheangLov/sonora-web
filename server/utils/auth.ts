@@ -152,7 +152,7 @@ export async function startDeviceFlow() {
 
 export type TokenResult =
   | { status: 'ok', accessToken: string, refreshToken?: string, expiresIn: number }
-  | { status: 'pending' | 'slow_down' | 'denied' | 'expired' | 'error', message?: string }
+  | { status: 'pending' | 'slow_down' | 'denied' | 'expired' | 'revoked' | 'error', message?: string }
 
 export async function exchangeToken(via: OAuthVia, grant: { deviceCode: string } | { refreshToken: string }): Promise<TokenResult> {
   const c = await oauthClient(via)
@@ -175,6 +175,9 @@ export async function exchangeToken(via: OAuthVia, grant: { deviceCode: string }
   if (err === 'slow_down') return { status: 'slow_down' }
   if (err === 'access_denied') return { status: 'denied' }
   if (err === 'expired_token') return { status: 'expired' }
+  // The refresh token itself is dead (revoked, password changed, or a "Testing" OAuth app's 7-day limit).
+  // Anything else (rate limits, Google hiccups) is temporary and must not sign you out.
+  if (err === 'invalid_grant' && 'refreshToken' in grant) return { status: 'revoked', message: String(r.data.error_description ?? '') }
   return { status: 'error', message: String(r.data.error_description ?? err ?? r.status) }
 }
 
@@ -214,4 +217,49 @@ export async function exchangeAuthCode(event: H3Event, code: string) {
     email: profile.email ?? null,
     photo: profile.picture ?? null,
   }
+}
+
+// ------------------------------------------------------------------ remembered session (survives storage wipes)
+//
+// Phones are hard on sign-ins kept in localStorage: Safari erases script storage after 7 days without
+// a visit, and an installed app (PWA) may not share storage with the browser tab that came back
+// from Google. So the refresh token is also kept in an HttpOnly cookie set by this server. Cookies set
+// by a server aren't subject to those limits, scripts can't read it, and it's only sent to /api/auth.
+// It still lives only in the listener's browser: the server stores nothing.
+
+export const SESSION_COOKIE = 'sonora_rt'
+/** Readable by scripts, holds no secret: tells the app a remembered session exists. */
+export const SESSION_HINT_COOKIE = 'sonora_signed'
+export const STATE_COOKIE = 'sonora_oauth_state'
+const YEAR = 400 * 86400
+
+function secure(event: H3Event) {
+  return getRequestURL(event, { xForwardedProto: true }).protocol === 'https:'
+}
+
+export function rememberSession(event: H3Event, via: OAuthVia, refreshToken: string) {
+  const s = secure(event)
+  setCookie(event, SESSION_COOKIE, `${via}:${refreshToken}`, { httpOnly: true, secure: s, sameSite: 'lax', path: '/api/auth', maxAge: YEAR })
+  setCookie(event, SESSION_HINT_COOKIE, via, { httpOnly: false, secure: s, sameSite: 'lax', path: '/', maxAge: YEAR })
+}
+
+export function forgetSession(event: H3Event) {
+  deleteCookie(event, SESSION_COOKIE, { path: '/api/auth' })
+  deleteCookie(event, SESSION_HINT_COOKIE, { path: '/' })
+}
+
+export function readSession(event: H3Event): { via: OAuthVia, refreshToken: string } | null {
+  const raw = getCookie(event, SESSION_COOKIE)
+  if (!raw) return null
+  const i = raw.indexOf(':')
+  const via = raw.slice(0, i)
+  const refreshToken = raw.slice(i + 1)
+  if ((via !== 'web' && via !== 'google' && via !== 'tv') || refreshToken.length < 10) return null
+  return { via, refreshToken }
+}
+
+/** Revoke a refresh token at Google (clean sign-out). Best effort. */
+export async function revokeToken(via: OAuthVia, token: string) {
+  if (via === 'tv') return
+  await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`, { method: 'POST' }).catch(() => {})
 }

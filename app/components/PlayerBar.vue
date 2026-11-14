@@ -3,6 +3,8 @@
 const player = usePlayer()
 const lib = useLibrary()
 const ui = useUi()
+const audioFx = useAudioFx()
+const fxOn = computed(() => fxActive(audioFx.settings.value) || audioFx.settings.value.tempo !== 1)
 const song = computed(() => player.current.value)
 const liked = computed(() => !!song.value && lib.isLiked(song.value.id))
 const scrub = ref<number | null>(null)
@@ -47,6 +49,7 @@ function openLyrics() { player.nowPlayingOpen.value = true }
     </div>
 
     <div class="right row">
+      <button class="icon-btn sm" :class="{ active: fxOn }" aria-label="Equalizer" @click="ui.eqOpen.value = true"><Icon name="graphicEq" :size="20" /></button>
       <button class="icon-btn sm" aria-label="Lyrics" :disabled="!song" @click="openLyrics"><Icon name="lyrics" :size="20" /></button>
       <button class="icon-btn sm" aria-label="Queue" @click="ui.queueOpen.value = true"><Icon name="queue" :size="20" /></button>
       <button class="icon-btn sm" aria-label="Mute" @click="player.toggleMute()"><Icon :name="player.volume.value === 0 ? 'volumeOff' : 'volume'" :size="20" /></button>
