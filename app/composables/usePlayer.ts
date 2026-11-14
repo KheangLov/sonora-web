@@ -94,6 +94,8 @@ function ensureAudio(): HTMLAudioElement {
     if (Number.isFinite(audio!.duration)) duration.value = audio!.duration
   })
   audio.addEventListener('ended', onEnded)
+  // Equalizer / effects (Web Audio) and tempo, also mirrored to the fallback player.
+  useAudioFx().attach(audio, (rate) => { if (yt) yt.setRate(rate) })
   audio.addEventListener('error', () => {
     if (engine.value !== 'audio' || !audio!.src) return
     onPlaybackError()
@@ -156,6 +158,7 @@ function ensureYt(): YouTubeFallback {
       skipAfterError()
     },
   })
+  yt.rate = useAudioFx().settings.value.tempo || 1
   return yt
 }
 
@@ -387,7 +390,7 @@ function updatePositionState() {
     navigator.mediaSession.setPositionState({
       duration: duration.value,
       position: Math.min(position.value, duration.value),
-      playbackRate: 1,
+      playbackRate: useAudioFx().settings.value.tempo || 1,
     })
   }
   catch {}

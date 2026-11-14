@@ -29,6 +29,7 @@ watch(player.nowPlayingOpen, (open) => { document.documentElement.style.overflow
     <NameDialog />
     <SleepTimer />
     <SignInSheet />
+    <EqualizerPanel />
     <InstallSheet />
     <Toast />
   </div>

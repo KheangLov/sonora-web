@@ -80,6 +80,15 @@ export class YouTubeFallback {
     await this.ensure()
     if (autoplay) this.player.loadVideoById({ videoId: id, startSeconds: startSec })
     else this.player.cueVideoById({ videoId: id, startSeconds: startSec })
+    // A new video starts at 1x: re-apply the tempo once it's going.
+    if (this.rate !== 1) { this.setRate(this.rate); setTimeout(() => this.setRate(this.rate), 1200) }
+  }
+
+  /** Tempo from the equalizer screen. YouTube only allows its own steps (0.25x increments). */
+  rate = 1
+  setRate(r: number) {
+    this.rate = r
+    try { this.player?.setPlaybackRate?.(r) } catch {}
   }
 
   play() { this.player?.playVideo() }

@@ -15,7 +15,7 @@ function submit() {
 <template>
   <Sheet :open="!!d" :title="d?.title" @close="close">
     <form class="form" @submit.prevent="submit">
-      <input v-model="name" class="input" placeholder="Playlist name" autofocus maxlength="80">
+      <input v-model="name" class="input" :placeholder="d?.placeholder ?? 'Playlist name'" autofocus maxlength="80">
       <div class="row gap-8 end">
         <button type="button" class="btn btn-text" @click="close">Cancel</button>
         <button type="submit" class="btn btn-primary" :disabled="!name.trim()">{{ d?.confirm }}</button>
