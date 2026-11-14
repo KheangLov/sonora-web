@@ -10,6 +10,7 @@ const acc = useAccount()
 const toast = useToast()
 
 const login = shallowRef<DeviceLogin | null>(null)
+const handedOff = useState('sonora-signin-handed-off', () => false)
 const showOther = ref(false)
 const showCookie = ref(false)
 const redirecting = ref(false)
@@ -21,7 +22,12 @@ const cookieError = ref('')
 const codeVisible = computed(() => !acc.googleEnabled.value || showOther.value)
 watch([() => ui.signInOpen.value, codeVisible], ([open, visible]) => {
   if (open && visible && !acc.signedIn.value && !login.value) start()
-  if (!open) { acc.cancelDeviceLogin(); login.value = null; cookie.value = ''; cookieError.value = ''; showOther.value = false; redirecting.value = false; ui.signInOther.value = false }
+  if (!open) {
+    // Already on Google's page with this code? Keep waiting in the background so the sign-in still
+    // finishes when you come back, even though the sheet was closed.
+    if (!handedOff.value || login.value?.phase !== 'code') { acc.cancelDeviceLogin(); handedOff.value = false }
+    login.value = null; cookie.value = ''; cookieError.value = ''; showOther.value = false; redirecting.value = false; ui.signInOther.value = false
+  }
 })
 watch(() => ui.signInOpen.value, (open) => { if (open && ui.signInOther.value) showOther.value = true }, { flush: 'sync' })
 
@@ -31,8 +37,10 @@ function google() {
 }
 watch(() => acc.signedIn.value, (s) => { if (s && ui.signInOpen.value) ui.signInOpen.value = false })
 
-function start() {
-  login.value = acc.startDeviceLogin()
+/** Shows the pending code if there is one (e.g. after this tab was reloaded), otherwise gets one. */
+function start(fresh = false) {
+  login.value = acc.startDeviceLogin(fresh)
+  if (fresh) handedOff.value = false
 }
 
 async function copyCode() {
@@ -42,6 +50,7 @@ async function copyCode() {
 
 function openGoogle() {
   copyCode()
+  handedOff.value = true
   window.open(login.value?.url || 'https://www.google.com/device', '_blank', 'noopener')
 }
 
@@ -77,15 +86,16 @@ async function useCookie() {
 
       <template v-else-if="login.phase === 'code'">
         <ol class="steps">
-          <li>Open <b>google.com/device</b> (on this or any other device)</li>
-          <li>Enter this code and choose your account</li>
-          <li>Come back here, it finishes by itself</li>
+          <li>Tap <b>Open google.com/device</b> below (the code is copied for you)</li>
+          <li>Paste the code, choose your account and tap <b>Allow</b></li>
+          <li>Come back to Sonora: it finishes by itself. You stay signed in.</li>
         </ol>
         <button class="code" aria-label="Copy code" @click="copyCode">
           <span>{{ login.userCode }}</span><Icon name="copy" :size="20" />
         </button>
         <button class="btn btn-primary wide" @click="openGoogle"><Icon name="openNew" :size="18" />Open google.com/device</button>
         <p class="wait small muted row"><span class="spinner sm" />Waiting for you to approve…</p>
+        <button class="btn btn-text small" @click="acc.pollNow()">I've approved it, check now</button>
       </template>
 
       <template v-else-if="login.phase === 'done'">
@@ -94,7 +104,7 @@ async function useCookie() {
 
       <template v-else>
         <p class="err">{{ login.error }}</p>
-        <button class="btn btn-primary" @click="start">Get a new code</button>
+        <button class="btn btn-primary" @click="start(true)">Get a new code</button>
       </template>
 
       <div class="alt">
