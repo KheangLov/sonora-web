@@ -1,0 +1,22 @@
+✅ home feed renders — 1776 ms to first song card
+✅ search results — 38 rows
+✅ Thai search is blocked
+⚠️  playback starts (skipped: CI IP is bot-checked by YouTube)
+✅ autoplay radio queue — 50 songs
+✅ synced lyrics show
+⚠️  seek (skipped: CI IP is bot-checked by YouTube)
+⚠️  next track plays (skipped: CI IP is bot-checked by YouTube)
+✅ dislike skips the song
+✅ disliked song listed in Library → Disliked — Castle on the Hill
+✅ Install button on Home
+✅ install sheet opens
+✅ Continue with Google opens Google sign-in in one tap — https://accounts.google.com/o/oauth2/v2/auth?client_id=ci-placeholder.apps.googleuserconte
+✅ returning from Google signs you in — name shown: true, token removed from URL: true
+✅ forged sign-in is refused
+✅ sign-in shows a Google device code — RFS-LDD-BMWB
+✅ opens offline (service worker) — sw: controlled
+✅ offline home shows "Available offline"
+✅ offline search falls back to your library
+✅ no page errors
+✅ Chrome says Sonora is installable — manifest ok (0 warnings: )
+⚠️  desktop: play from home card (skipped: CI IP is bot-checked by YouTube)
